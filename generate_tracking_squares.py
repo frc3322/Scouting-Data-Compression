@@ -36,17 +36,17 @@ def generate_april_tags_image(
     tag_data_gap: int = 1,
     data_padding: int = 1
 ) -> np.ndarray:
-    """Generate an image with AprilTags in all 4 corners and randomly colored data in between.
+    """Generate an image with AprilTags in all 4 corners.
 
     Args:
         image_width: Width of the output image.
         image_height: Height of the output image.
         padding: Number of pixels to pad the tags from the image edges.
-        tag_data_gap: Number of pixels gap between tags and random data areas.
-        data_padding: Number of pixels to pad the random data areas from the image edges.
+        tag_data_gap: Number of pixels gap between tags and data areas.
+        data_padding: Number of pixels to pad the data areas from the image edges.
 
     Returns:
-        A numpy array representing the color image with AprilTags and random colors.
+        A numpy array representing the color image with AprilTags in corners.
     """
     # Create white background image
     image = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
@@ -63,8 +63,40 @@ def generate_april_tags_image(
         (slice(image_height-padding-tag_size, image_height-padding), slice(image_width-padding-tag_size, image_width-padding))  # Bottom-right
     ]
 
-    # Define regions for random noise (data_padding from walls, configurable gap from tags)
-    noise_regions = [
+    # Place AprilTags at corners (convert grayscale to RGB by replicating across channels)
+    for row_slice, col_slice in corners:
+        # Place grayscale AprilTag in all RGB channels (keeps it black/white)
+        for channel in range(3):
+            image[row_slice, col_slice, channel] = april_tag
+
+    return image
+
+
+def get_data_regions(
+    image_width: int,
+    image_height: int,
+    padding: int = 1,
+    tag_data_gap: int = 1,
+    data_padding: int = 1
+) -> list[tuple[slice, slice]]:
+    """Get the valid data regions where data can be placed between AprilTags.
+
+    Args:
+        image_width: Width of the image.
+        image_height: Height of the image.
+        padding: Number of pixels to pad the tags from the image edges.
+        tag_data_gap: Number of pixels gap between tags and data areas.
+        data_padding: Number of pixels to pad the data areas from the image edges.
+
+    Returns:
+        List of tuples containing (row_slice, col_slice) for each valid data region.
+    """
+    # Load AprilTag to get tag size
+    april_tag = load_april_tag()
+    tag_size = april_tag.shape[0]  # Should be 8
+
+    # Define regions for data (data_padding from walls, configurable gap from tags)
+    data_regions = [
         # Top area (above the top tags, with configurable gap)
         (slice(data_padding, data_padding+tag_size+tag_data_gap), slice(data_padding+tag_size+tag_data_gap, image_width-data_padding-tag_size-tag_data_gap)),
         # Bottom area (below the bottom tags, with configurable gap)
@@ -77,21 +109,16 @@ def generate_april_tags_image(
         (slice(data_padding+tag_size+tag_data_gap, image_height-data_padding-tag_size-tag_data_gap), slice(data_padding+tag_size+tag_data_gap, image_width-data_padding-tag_size-tag_data_gap))
     ]
 
-    # Generate random colors in noise regions
-    for row_slice, col_slice in noise_regions:
+    # Filter out invalid regions (where start >= stop)
+    valid_regions = []
+    for row_slice, col_slice in data_regions:
         if row_slice.start < row_slice.stop and col_slice.start < col_slice.stop:
-            # Ensure slices are valid
+            # Ensure slices are within image bounds
             valid_row_slice = slice(max(0, row_slice.start), min(image_height, row_slice.stop))
             valid_col_slice = slice(max(0, col_slice.start), min(image_width, col_slice.stop))
-            image[valid_row_slice, valid_col_slice] = np.random.randint(0, 256, (valid_row_slice.stop - valid_row_slice.start, valid_col_slice.stop - valid_col_slice.start, 3), dtype=np.uint8)
+            valid_regions.append((valid_row_slice, valid_col_slice))
 
-    # Place AprilTags at corners (convert grayscale to RGB by replicating across channels)
-    for row_slice, col_slice in corners:
-        # Place grayscale AprilTag in all RGB channels (keeps it black/white)
-        for channel in range(3):
-            image[row_slice, col_slice, channel] = april_tag
-
-    return image
+    return valid_regions
 
 
 def save_april_tags_image(
@@ -102,19 +129,19 @@ def save_april_tags_image(
     tag_data_gap: int = 1,
     data_padding: int = 1
 ) -> None:
-    """Generate and save a color image with AprilTags and randomly colored data.
+    """Generate and save a color image with AprilTags in corners.
 
     Args:
         filename: Output filename for the image.
         image_width: Width of the output image.
         image_height: Height of the output image.
         padding: Number of pixels to pad the tags from the image edges.
-        tag_data_gap: Number of pixels gap between tags and random data areas.
-        data_padding: Number of pixels to pad the random data areas from the image edges.
+        tag_data_gap: Number of pixels gap between tags and data areas.
+        data_padding: Number of pixels to pad the data areas from the image edges.
     """
     image = generate_april_tags_image(image_width, image_height, padding, tag_data_gap, data_padding)
     cv2.imwrite(filename, image)
-    print(f"AprilTags image with random colors saved to {filename}")
+    print(f"AprilTags image saved to {filename}")
 
 
 if __name__ == "__main__":
