@@ -1,0 +1,24 @@
+# This file configures Black, the Python code formatter.
+# See: https://black.readthedocs.io/en/stable/usage_and_configuration/index.html
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+skip-string-normalization = false
+include = '\.pyi?$'
+exclude = '''
+/(
+    \._| # hidden files and directories
+    build/
+    dist/
+    .eggs/
+    .git/
+    .hg/
+    .mypy_cache/
+    .tox/
+    .venv/
+    __pycache__/
+    tests/qr_outputs/
+)
+'''
+license = "MIT"
