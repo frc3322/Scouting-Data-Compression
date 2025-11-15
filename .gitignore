@@ -10,3 +10,5 @@ __pycache__/
 *.pyzw
 *.pyzwz
 *.pyzwzw
+*.cpython
+*.cpython-312.pyc

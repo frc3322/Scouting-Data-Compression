@@ -316,7 +316,13 @@ def main():
     print(f"Encoded image saved to {output_filename}")
 
     # Test decoding
-    decoded_bytes = decode_image_data(encoded_image, len(packed_data))
+    decoded_bytes = decode_image_data(
+        encoded_image,
+        len(packed_data),
+        padding=padding,
+        tag_data_gap=tag_data_gap,
+        data_padding=data_padding,
+    )
     print(f"Original data size: {len(packed_data)} bytes")
     print(f"Decoded data size:  {len(decoded_bytes)} bytes")
     print(f"Data matches: {packed_data == decoded_bytes}")
