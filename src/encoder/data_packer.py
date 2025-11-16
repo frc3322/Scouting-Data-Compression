@@ -256,10 +256,11 @@ def encode(headers: List[str], rows: List[List[str]], out_path: Path) -> None:
     data_bytes = pack_columnar_bitplanes(values_by_col, bits_by_col)
 
     compressor = zstandard.ZstdCompressor(
-        level=19,
+        level=22,
         write_content_size=False,
         write_checksum=False,
         write_dict_id=False,
+        threads=-1,
     )
     compressed_data = compressor.compress(data_bytes)
 

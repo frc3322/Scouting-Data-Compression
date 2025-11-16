@@ -4,6 +4,8 @@
 import sys
 import tempfile
 from pathlib import Path
+import traceback
+import argparse
 
 from src.decoder.data_unpacker import decode, write_csv
 from src.decoder.image_processor import process_image_to_data
@@ -13,6 +15,7 @@ def decode_image_to_csv(
     image_path: str | Path,
     output_csv_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    debug: bool = False,
 ) -> Path:
     """Decode image with AprilTags back to CSV data.
 
@@ -20,6 +23,7 @@ def decode_image_to_csv(
         image_path: Path to input image file.
         output_csv_path: Optional path for output CSV. Defaults to image name with .csv extension.
         packed_file_path: Optional path for intermediate packed file. If None, uses a temporary file.
+        debug: If True, save intermediate images during processing.
 
     Returns:
         Path to the created CSV file.
@@ -36,7 +40,7 @@ def decode_image_to_csv(
 
     print(f"Processing image: {image_path}")
 
-    decoded_bytes = process_image_to_data(image_path)
+    decoded_bytes = process_image_to_data(image_path, debug=debug)
 
     if decoded_bytes is None:
         raise ValueError("Failed to detect AprilTags or extract data from image")
@@ -71,18 +75,37 @@ def decode_image_to_csv(
 
 def main() -> None:
     """Main CLI entry point."""
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} INPUT.png [OUTPUT.csv] [PACKED.packed]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Decode image with AprilTags back to CSV data."
+    )
+    parser.add_argument("input_image", help="Path to input image file")
+    parser.add_argument(
+        "output_csv",
+        nargs="?",
+        help="Optional path for output CSV (defaults to input image name with .csv extension)"
+    )
+    parser.add_argument(
+        "packed_file",
+        nargs="?",
+        help="Optional path for intermediate packed file"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Save intermediate images during processing"
+    )
 
-    image_path = sys.argv[1]
-    output_csv_path = sys.argv[2] if len(sys.argv) >= 3 else None
-    packed_file_path = sys.argv[3] if len(sys.argv) >= 4 else None
+    args = parser.parse_args()
 
     try:
-        decode_image_to_csv(image_path, output_csv_path, packed_file_path)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        decode_image_to_csv(
+            args.input_image,
+            args.output_csv,
+            args.packed_file,
+            debug=args.debug
+        )
+    except Exception:
+        print(f"Error: {traceback.format_exc()}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -45,15 +45,31 @@ def create_encoded_image(
     pixels_needed = ((bytes_needed + 1) // 2) * 8
     pixels_available = len(pixel_coords)
 
-    if pixels_needed > pixels_available:
+    if pixels_needed + 6 > pixels_available:  # +6 for calibration pixels
         raise ValueError(
-            f"Not enough pixels to encode data: need {pixels_needed} pixels "
-            f"for {bytes_needed} bytes, but only have {pixels_available} pixels available"
+            f"Not enough pixels to encode data: need {pixels_needed + 6} pixels "
+            f"for {bytes_needed} bytes + calibration, but only have {pixels_available} pixels available"
         )
 
+    # Place encoded data first
     for i, (row, col) in enumerate(pixel_coords):
         if i < len(encoded_colors):
             image[row, col] = encoded_colors[i]
+
+    # Place calibration pixels at the very end of data regions (last 6 positions)
+    calibration_colors = [
+        (255, 255, 255),  # White
+        (0, 0, 255),      # Red
+        (0, 255, 0),      # Green
+        (255, 0, 0),      # Blue
+        (0, 0, 0),        # Black
+        (255, 255, 255),  # White
+    ]
+
+    for i, calibration_color in enumerate(calibration_colors):
+        coord_index = pixels_available - 6 + i  # Last 6 positions
+        row, col = pixel_coords[coord_index]
+        image[row, col] = calibration_color
 
     return image
 
@@ -75,7 +91,7 @@ def calculate_minimum_image_size(
     Returns:
         Minimum square image size that can accommodate the data.
     """
-    pixels_needed = ((len(data_bytes) + 1) // 2) * 8
+    pixels_needed = ((len(data_bytes) + 1) // 2) * 8 + 6  # +6 for calibration pixels at fixed positions
 
     image_size = start_size
     while True:
