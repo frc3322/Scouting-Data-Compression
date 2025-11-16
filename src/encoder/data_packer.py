@@ -1,17 +1,8 @@
-#!/usr/bin/env python3
-"""
-Custom bit-packing compressor with hard-coded schema.
-
-File format (binary):
-  magic: 8 bytes = b"SCOUTPK4"
-  num_rows: 4-byte big-endian unsigned int
-  data: Zstandard-compressed bit-packed values in row-major order
-"""
+"""Data packing and compression for encoding."""
 
 import csv
 import math
 import struct
-import sys
 import zstandard
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,12 +17,10 @@ class ColumnSchema:
     name: str
     kind: ColumnKind
     bits: int
-    int_max: Optional[int] = None  # for ints
-    values: Optional[List[str]] = None  # for enums
+    int_max: Optional[int] = None
+    values: Optional[List[str]] = None
 
 
-# HARD-CODED SCHEMA - based on MatchData.csv format with the following fields:
-# ScoutName,MatchNumber,TeamNumber,Mobility,AutonL1Attempted,AutonL1Scored,AutonL2Attempted,AutonL2Scored,AutonL3Attempted,AutonL3Scored,AutonL4Attempted,AutonL4Scored,AutonBargeAttempted,AutonBargeScored,AutonProcessorAttempted,AutonProcessorScored,AutonAlgaeRemoved,TeleopL1Attempted,TeleopL1Scored,TeleopL2Attempted,TeleopL2Scored,TeleopL3Attempted,TeleopL3Scored,TeleopL4Attempted,TeleopL4Scored,TeleopBargeAttempted,TeleopBargeScored,TeleopProcessorAttempted,TeleopProcessorScored,TeleopAlgaeRemoved,ClimbSuccessful,Climb,Breakdown,DefenseDescription,Notes
 SCHEMA: List[ColumnSchema] = [
     ColumnSchema(
         name="ScoutName", kind="enum", bits=2, values=["Jude", "Dillon", "", ""]
@@ -76,6 +65,9 @@ SCHEMA: List[ColumnSchema] = [
 
 
 class BitWriter:
+    """Legacy row-major bit writer. No longer used; kept for reference.
+    Current implementation uses columnar bit-plane packing instead.
+    """
     def __init__(self) -> None:
         self._buffer: int = 0
         self._bit_count: int = 0
@@ -109,41 +101,37 @@ class BitWriter:
         return bytes(self._bytes)
 
 
-class BitReader:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-        self._index = 0
-        self._buffer = 0
-        self._bit_count = 0
-
-    def read(self, bits: int) -> int:
+def pack_columnar_bitplanes(
+    values_by_col: List[List[int]],
+    bits_by_col: List[int],
+) -> bytes:
+    """Pack columns as bit-planes (MSB->LSB) for better compressibility.
+    
+    Args:
+        values_by_col: List of columns, each containing integer values for all rows.
+        bits_by_col: Number of bits for each column.
+        num_rows: Total number of rows.
+    
+    Returns:
+        Packed bytes with columnar bit-plane layout.
+    """
+    out = bytearray()
+    for vals, bits in zip(values_by_col, bits_by_col):
         if bits == 0:
-            return 0
-
-        result = 0
-        remaining_bits = bits
-
-        while remaining_bits > 0:
-            if self._bit_count == 0:
-                if self._index >= len(self._data):
-                    raise EOFError("Unexpected end of data")
-                self._buffer = self._data[self._index]
-                self._index += 1
-                self._bit_count = 8
-
-            take = min(remaining_bits, self._bit_count)
-            shift = self._bit_count - take
-            chunk = (self._buffer >> shift) & ((1 << take) - 1)
-            self._bit_count -= take
-            if self._bit_count > 0:
-                self._buffer &= (1 << self._bit_count) - 1
-            else:
-                self._buffer = 0
-
-            result = (result << take) | chunk
-            remaining_bits -= take
-
-        return result
+            continue
+        for b in range(bits - 1, -1, -1):
+            acc = 0
+            nbits = 0
+            for v in vals:
+                acc = (acc << 1) | ((v >> b) & 1)
+                nbits += 1
+                if nbits == 8:
+                    out.append(acc)
+                    acc = 0
+                    nbits = 0
+            if nbits:
+                out.append(acc << (8 - nbits))
+    return bytes(out)
 
 
 def validate_schema() -> None:
@@ -170,133 +158,15 @@ def validate_schema() -> None:
                 )
 
 
-def encode(headers: List[str], rows: List[List[str]], out_path: Path) -> None:
-    validate_schema()
-    
-    # Verify CSV headers match schema
-    schema_names = [s.name for s in SCHEMA]
-    if headers != schema_names:
-        raise ValueError(
-            f"CSV headers {headers} don't match hard-coded schema {schema_names}"
-        )
+def read_csv(path: Path) -> tuple[List[str], List[List[str]]]:
+    """Read CSV file and return headers and rows.
 
-    num_rows = len(rows)
+    Args:
+        path: Path to CSV file.
 
-    # Build enum lookups
-    enum_lookups: List[Optional[Dict[str, int]]] = []
-    for s in SCHEMA:
-        if s.kind == "enum":
-            assert s.values is not None
-            enum_lookups.append({v: i for i, v in enumerate(s.values)})
-        else:
-            enum_lookups.append(None)
-
-    # Bit-pack
-    writer = BitWriter()
-    for row in rows:
-        for col_idx, s in enumerate(SCHEMA):
-            if s.bits == 0:
-                continue
-
-            raw = row[col_idx].strip("\n")
-            raw = '' if raw == ' ' else raw
-            
-            if s.kind == "int":
-                value = int(raw)
-                if value > s.int_max:
-                    raise ValueError(
-                        f"Value {value} exceeds int_max {s.int_max} for "
-                        f"column {s.name}"
-                    )
-            else:
-                lookup = enum_lookups[col_idx]
-                assert lookup is not None
-                if raw not in lookup:
-                    raise ValueError(
-                        f"Value {raw!r} not in enum values for column {s.name}"
-                    )
-                value = lookup[raw]
-
-            writer.write(value, s.bits)
-
-    data_bytes = writer.finish()
-
-    # Compress
-    compressor = zstandard.ZstdCompressor(level=22)
-    compressed_data = compressor.compress(data_bytes)
-
-    # Write minimal header
-    magic = b"SCOUTPK4"
-    with out_path.open("wb") as f:
-        f.write(magic)
-        f.write(struct.pack(">I", num_rows))
-        f.write(compressed_data)
-
-    original_size = sum(len(",".join(r)) + 1 for r in [headers] + rows)
-    final_size = 8 + 4 + len(compressed_data)
-    ratio = original_size / final_size if final_size > 0 else 0.0
-
-    print(f"Packed to: {out_path}")
-    print(f"Original CSV size (approx):    {original_size} bytes")
-    print(f"Bit-packed size:               {len(data_bytes)} bytes")
-    print(f"Final compressed size:         {final_size} bytes")
-    print(f"  (header: 12 bytes, data: {len(compressed_data)} bytes)")
-    print(f"Compression ratio:             {ratio:.2f}x")
-
-
-def decode(in_path: Path) -> (List[str], List[List[str]]):
-    validate_schema()
-    
-    data = in_path.read_bytes()
-    
-    if len(data) < 12:
-        raise ValueError("File too short")
-    
-    magic = data[:8]
-    if magic != b"SCOUTPK4":
-        raise ValueError(f"Invalid magic: {magic}")
-
-    (num_rows,) = struct.unpack(">I", data[8:12])
-    compressed_data = data[12:]
-
-    # Decompress
-    decompressor = zstandard.ZstdDecompressor()
-    data_bytes = decompressor.decompress(compressed_data)
-
-    # Decode
-    reader = BitReader(data_bytes)
-    rows: List[List[str]] = []
-    
-    for _ in range(num_rows):
-        row: List[str] = []
-        for s in SCHEMA:
-            if s.bits == 0:
-                if s.kind == "int":
-                    v_str = "0"
-                else:
-                    assert s.values is not None
-                    v_str = s.values[0]
-                row.append(v_str)
-                continue
-
-            value = reader.read(s.bits)
-
-            if s.kind == "int":
-                row.append(str(value))
-            else:
-                assert s.values is not None
-                if value >= len(s.values):
-                    raise ValueError(
-                        f"Enum index {value} out of range for {s.name}"
-                    )
-                row.append(s.values[value])
-        rows.append(row)
-
-    headers = [s.name for s in SCHEMA]
-    return headers, rows
-
-
-def read_csv(path: Path) -> (List[str], List[List[str]]):
+    Returns:
+        Tuple of (headers, rows).
+    """
     with path.open("r", newline="") as f:
         reader = csv.reader(f)
         rows = list(reader)
@@ -313,7 +183,6 @@ def clean_csv_newlines(path: Path) -> None:
     """
     headers, rows = read_csv(path)
 
-    # Clean newlines from all cells (same logic as encode function)
     cleaned_rows = []
     for row in rows:
         cleaned_row = []
@@ -323,53 +192,88 @@ def clean_csv_newlines(path: Path) -> None:
             cleaned_row.append(cell)
         cleaned_rows.append(cleaned_row)
 
-    # Write back the cleaned data
     with path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(cleaned_rows)
 
 
-def verify_equal(
-    headers1: List[str],
-    rows1: List[List[str]],
-    headers2: List[str],
-    rows2: List[List[str]],
-) -> None:
-    if headers1 != headers2:
-        raise AssertionError("Headers differ")
-    if len(rows1) != len(rows2):
-        raise AssertionError(f"Row counts differ: {len(rows1)} vs {len(rows2)}")
-    for i, (r1, r2) in enumerate(zip(rows1, rows2)):
-        if r1 != r2:
-            raise AssertionError(f"Row {i} differs:\n  {r1}\n  {r2}")
+def encode(headers: List[str], rows: List[List[str]], out_path: Path) -> None:
+    """Encode CSV data into packed binary format.
 
+    Args:
+        headers: CSV column headers.
+        rows: CSV data rows.
+        out_path: Output path for packed file.
+    """
+    validate_schema()
 
-def main(argv: List[str]) -> None:
-    if len(argv) < 2:
-        print(f"Usage: {argv[0]} INPUT.csv [OUTPUT.packed]", file=sys.stderr)
-        raise SystemExit(1)
+    schema_names = [s.name for s in SCHEMA]
+    if headers != schema_names:
+        raise ValueError(
+            f"CSV headers {headers} don't match hard-coded schema {schema_names}"
+        )
 
-    input_csv = Path(argv[1])
-    output_packed = (
-        Path(argv[2]) if len(argv) >= 3 else input_csv.with_suffix(".packed")
+    num_rows = len(rows)
+
+    enum_lookups: List[Optional[Dict[str, int]]] = []
+    for s in SCHEMA:
+        if s.kind == "enum":
+            assert s.values is not None
+            enum_lookups.append({v: i for i, v in enumerate(s.values)})
+        else:
+            enum_lookups.append(None)
+
+    values_by_col: List[List[int]] = []
+    bits_by_col: List[int] = []
+    for col_idx, s in enumerate(SCHEMA):
+        if s.bits == 0:
+            continue
+        col_vals: List[int] = []
+        for row in rows:
+            raw = row[col_idx].strip("\n")
+            raw = "" if raw == " " else raw
+            if s.kind == "int":
+                value = int(raw)
+                assert s.int_max is not None
+                if value > s.int_max:
+                    raise ValueError(
+                        f"Value {value} exceeds int_max {s.int_max} for "
+                        f"column {s.name}"
+                    )
+            else:
+                lookup = enum_lookups[col_idx]
+                assert lookup is not None
+                if raw not in lookup:
+                    raise ValueError(
+                        f"Value {raw!r} not in enum values for column {s.name}"
+                    )
+                value = lookup[raw]
+            col_vals.append(value)
+        values_by_col.append(col_vals)
+        bits_by_col.append(s.bits)
+
+    data_bytes = pack_columnar_bitplanes(values_by_col, bits_by_col)
+
+    compressor = zstandard.ZstdCompressor(
+        level=19,
+        write_content_size=False,
+        write_checksum=False,
+        write_dict_id=False,
     )
+    compressed_data = compressor.compress(data_bytes)
 
-    print(f"Cleaning newlines from CSV: {input_csv}")
-    clean_csv_newlines(input_csv)
+    magic = b"SCOUTPK5"
+    with out_path.open("wb") as f:
+        f.write(magic)
+        f.write(struct.pack(">I", num_rows))
+        f.write(compressed_data)
 
-    print(f"Reading cleaned CSV: {input_csv}")
-    headers, rows = read_csv(input_csv)
+    original_size = sum(len(",".join(r)) + 1 for r in [headers] + rows)
+    final_size = 8 + 4 + len(compressed_data)
+    ratio = original_size / final_size if final_size > 0 else 0.0
 
-    print("Encoding...")
-    encode(headers, rows, output_packed)
+    print(f"Original CSV size (approx):    {original_size} bytes")
+    print(f"Final compressed size:         {final_size} bytes")
+    print(f"Compression ratio:             {ratio:.2f}x")
 
-    print("Verifying...")
-    decoded_headers, decoded_rows = decode(output_packed)
-
-    verify_equal(headers, rows, decoded_headers, decoded_rows)
-    print("✓ Verification passed")
-
-
-if __name__ == "__main__":
-    main(sys.argv)
