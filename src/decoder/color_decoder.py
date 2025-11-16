@@ -3,83 +3,109 @@
 import numpy as np
 from ..common.constants import (
     DATA_COLOR_MAP,
-    NON_WHITE_INDICES,
-    NON_WHITE_PALETTE_FLOAT,
     PALETTE_COLORS,
-    WHITE_INDEX,
-    WHITE_MAX_CHANNEL_SPREAD,
-    WHITE_MIN_CHANNEL,
 )
 from ..common.data_regions import get_data_regions
 
 
-def assign_palette_indices(pixel_values: np.ndarray) -> np.ndarray:
-    """Assign each pixel in the array to the closest palette index.
+def assign_palette_indices(
+    pixel_values: np.ndarray,
+    corrected_red_color: tuple[int, int, int],
+    corrected_blue_color: tuple[int, int, int],
+    corrected_green_color: tuple[int, int, int],
+    corrected_black_color: tuple[int, int, int],
+    corrected_white_color: tuple[int, int, int],
+) -> np.ndarray:
+    """Assign each pixel in the array to the closest palette index using corrected colors.
 
     Args:
         pixel_values: Array of pixel colors shaped (N, 3) or (3,).
+        corrected_red_color: Corrected red BGR tuple.
+        corrected_blue_color: Corrected blue BGR tuple.
+        corrected_green_color: Corrected green BGR tuple.
+        corrected_black_color: Corrected black BGR tuple.
+        corrected_white_color: Corrected white BGR tuple.
 
     Returns:
         Array of palette indices that best match each pixel.
     """
-    pixel_array = np.atleast_2d(pixel_values).astype(np.int16, copy=False)
-    min_channels = pixel_array.min(axis=1)
-    max_channels = pixel_array.max(axis=1)
-    channel_spread = max_channels - min_channels
-    white_mask = (min_channels >= WHITE_MIN_CHANNEL) & (
-        channel_spread <= WHITE_MAX_CHANNEL_SPREAD
+    pixel_array = np.atleast_2d(pixel_values).astype(np.float32, copy=False)
+    np.clip(pixel_array, 0.0, 255.0, out=pixel_array)
+
+    # Build corrected palette from the provided corrected RGB tuples
+    corrected_palette = np.array(
+        [
+            corrected_red_color,  # Red BGR
+            corrected_green_color,  # Green BGR
+            corrected_blue_color,  # Blue BGR
+            corrected_black_color,  # Black BGR
+            corrected_white_color,  # White BGR
+        ],
+        dtype=np.float32,
     )
 
-    palette_indices = np.empty(pixel_array.shape[0], dtype=np.int32)
-    palette_indices[white_mask] = WHITE_INDEX
+    color_distances = np.linalg.norm(
+        pixel_array[:, np.newaxis, :] - corrected_palette[np.newaxis, :, :],
+        axis=2,
+    )
+    nearest_palette_indices = np.argmin(color_distances, axis=1).astype(np.int32)
 
-    if np.any(~white_mask):
-        residual_pixels = pixel_array[~white_mask].astype(np.float32, copy=False)
-        distances = np.linalg.norm(
-            residual_pixels[:, np.newaxis, :]
-            - NON_WHITE_PALETTE_FLOAT[np.newaxis, :, :],
-            axis=2,
-        )
-        nearest = np.argmin(distances, axis=1)
-        palette_indices[~white_mask] = NON_WHITE_INDICES[nearest]
-
-    return palette_indices
+    # return the nearest palette index for each pixel
+    return nearest_palette_indices
 
 
-def get_majority_color(cell: np.ndarray) -> tuple[int, int, int]:
-    """Get the palette color that the most pixels in the cell are closest to.
+def map_to_palette(
+    cell: np.ndarray,
+    corrected_red_color: tuple[int, int, int],
+    corrected_blue_color: tuple[int, int, int],
+    corrected_green_color: tuple[int, int, int],
+    corrected_black_color: tuple[int, int, int],
+    corrected_white_color: tuple[int, int, int],
+) -> tuple[int, int, int]:
+    """Map an image cell to the nearest palette entry. Sees what palette color is most common in the cell.
 
     Args:
         cell: Image cell as numpy array.
-
-    Returns:
-        BGR tuple of the palette color with the highest pixel count.
-    """
-    if cell.size == 0:
-        return (0, 0, 0)
-
-    pixels = cell.reshape(-1, cell.shape[-1])
-    closest_palette_indices = assign_palette_indices(pixels)
-
-    counts = np.bincount(closest_palette_indices, minlength=len(PALETTE_COLORS))
-    majority_palette_idx = int(np.argmax(counts))
-    majority_color = PALETTE_COLORS[majority_palette_idx]
-    return tuple(int(channel) for channel in majority_color)
-
-
-def map_to_palette(color: tuple[int, int, int]) -> tuple[int, int, int]:
-    """Map an arbitrary BGR color to the nearest palette entry.
-
-    Args:
-        color: BGR color to quantize.
+        corrected_red_color: Corrected red BGR tuple.
+        corrected_blue_color: Corrected blue BGR tuple.
+        corrected_green_color: Corrected green BGR tuple.
+        corrected_black_color: Corrected black BGR tuple.
+        corrected_white_color: Corrected white BGR tuple.
 
     Returns:
         Palette color in BGR order.
     """
-    color_array = np.array(color, dtype=np.int16)
-    palette_index = int(assign_palette_indices(color_array)[0])
-    nearest_color = PALETTE_COLORS[palette_index]
-    return tuple(int(channel) for channel in nearest_color)
+    # only use center half of the cell, ie from 1/4 to 3/4 of the width and height
+    cell = cell[
+        cell.shape[0] // 4 : cell.shape[0] * 3 // 4,
+        cell.shape[1] // 4 : cell.shape[1] * 3 // 4,
+    ]
+
+    # Reshape cell to (N, 3) where N is total pixels, 3 is RGB channels
+    if cell.ndim == 3:
+        pixel_values = cell.reshape(-1, 3)
+    else:
+        pixel_values = cell
+
+    # go through each pixel in the cell and assign a palette index
+    palette_indices = assign_palette_indices(
+        pixel_values,
+        corrected_red_color,
+        corrected_blue_color,
+        corrected_green_color,
+        corrected_black_color,
+        corrected_white_color,
+    )
+
+    # count the number of pixels for each palette index
+    counts = np.bincount(palette_indices, minlength=len(PALETTE_COLORS))
+
+    # get the palette index with the highest count
+    majority_palette_idx = int(np.argmax(counts))
+
+    # get the color for the majority palette index
+    majority_color = PALETTE_COLORS[majority_palette_idx]
+    return tuple(int(channel) for channel in majority_color)
 
 
 def decode_rgb_to_2bytes(rgb_list: list[tuple[int, int, int]]) -> tuple[int, int]:
@@ -153,4 +179,3 @@ def decode_image_data(
         result = result[:original_length]
 
     return result
-

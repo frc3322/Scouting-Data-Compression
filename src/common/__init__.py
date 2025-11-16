@@ -11,9 +11,6 @@ from .constants import (
     PALETTE_COLORS,
     PALETTE_COLOR_ARRAY,
     WHITE_COLOR,
-    WHITE_INDEX,
-    WHITE_MAX_CHANNEL_SPREAD,
-    WHITE_MIN_CHANNEL,
 )
 from .data_regions import get_data_regions
 
@@ -30,8 +27,5 @@ __all__ = [
     "PALETTE_COLORS",
     "PALETTE_COLOR_ARRAY",
     "WHITE_COLOR",
-    "WHITE_INDEX",
-    "WHITE_MAX_CHANNEL_SPREAD",
-    "WHITE_MIN_CHANNEL",
 ]
 

@@ -4,7 +4,6 @@ from .color_decoder import (
     assign_palette_indices,
     decode_image_data,
     decode_rgb_to_2bytes,
-    get_majority_color,
     map_to_palette,
 )
 from .data_unpacker import decode, write_csv
@@ -23,7 +22,6 @@ __all__ = [
     "decode_image_data",
     "decode_rgb_to_2bytes",
     "assign_palette_indices",
-    "get_majority_color",
     "map_to_palette",
     "process_image_to_data",
     "detect_and_dewarp_image",
