@@ -6,7 +6,7 @@ import pupil_apriltags as apriltag
 from pathlib import Path
 
 from ..common.data_regions import get_data_regions
-from .color_decoder import decode_image_data, get_majority_color, map_to_palette
+from .color_decoder import decode_image_data, map_to_palette
 
 
 def estimate_module_size(tags: list, outer_corners: np.ndarray) -> tuple[int, int]:
@@ -23,7 +23,7 @@ def estimate_module_size(tags: list, outer_corners: np.ndarray) -> tuple[int, in
     if not tags:
         return (50, 30)
 
-    apriltag_modules = 6
+    apriltag_modules = 8
 
     tag_sizes = []
     for tag in tags:
@@ -94,23 +94,29 @@ def find_outer_corners_from_tags(tags: list) -> np.ndarray:
             all_corners[np.argmin(all_corners.sum(axis=1))],
             all_corners[np.argmax(all_corners[:, 0] - all_corners[:, 1])],
             all_corners[np.argmax(all_corners.sum(axis=1))],
-            all_corners[
-                np.argmin(all_corners[:, 0] - all_corners[:, 1])
-            ],
+            all_corners[np.argmin(all_corners[:, 0] - all_corners[:, 1])],
         ]
     )
 
     return outer_corners
 
 
-def detect_and_dewarp_image(image_path: str | Path) -> tuple[np.ndarray, int] | None:
+def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tuple[np.ndarray, int] | None:
     """Detect AprilTags in an image and dewarp the detected region.
+
+    This function filters detections to only include tag_id 0 with hamming < 0.1,
+    and requires exactly 4 April tags to be detected. If debug is True, it saves
+    an annotated image showing the detected tags.
 
     Args:
         image_path: Path to the input image.
+        debug: If True, save intermediate images during processing.
 
     Returns:
         Tuple of (dewarped_image, grid_size) if successful, None otherwise.
+
+    Raises:
+        ValueError: If not exactly 4 April tags are detected after filtering.
     """
     image_path = Path(image_path)
     image = cv2.imread(str(image_path))
@@ -120,10 +126,10 @@ def detect_and_dewarp_image(image_path: str | Path) -> tuple[np.ndarray, int] | 
     grey_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     detector = apriltag.Detector(
-        families="tag16h5",
+        families="tag36h11",
         nthreads=4,
         quad_decimate=1.0,
-        quad_sigma=0.0,
+        quad_sigma=0.4,
         refine_edges=1,
         decode_sharpening=0.25,
         debug=0,
@@ -141,6 +147,12 @@ def detect_and_dewarp_image(image_path: str | Path) -> tuple[np.ndarray, int] | 
 
     detections = new_detections
 
+    # Check if exactly 4 April tags are detected after filtering
+    if len(detections) != 4:
+        raise ValueError(
+            f"Expected exactly 4 April tags after filtering, but found {len(detections)}"
+        )
+
     outer_corners = find_outer_corners_from_tags(detections)
 
     if len(outer_corners) == 0:
@@ -151,17 +163,28 @@ def detect_and_dewarp_image(image_path: str | Path) -> tuple[np.ndarray, int] | 
 
     dewarped_color = dewarp_image(image, outer_corners, output_size=output_size)
 
+    # save the dewarped image
+    if debug:
+        cv2.imwrite("dewarped_image.png", dewarped_color)
+
     return (dewarped_color, total_cells)
 
 
 def extract_data_from_dewarped(
-    dewarped_image: np.ndarray, grid_size: int
+    dewarped_image: np.ndarray,
+    grid_size: int,
+    tag_data_gap: int = 1,
+    data_padding: int = 0,
+    debug: bool = False,
 ) -> np.ndarray:
     """Extract quantized data from a dewarped image.
 
     Args:
         dewarped_image: Dewarped image array.
         grid_size: Size of the grid in cells.
+        debug: If True, save intermediate images during processing.
+        tag_data_gap: Number of grid cells between AprilTags and data.
+        data_padding: Number of grid cells padding data from outer edges.
 
     Returns:
         Quantized data image array.
@@ -171,8 +194,8 @@ def extract_data_from_dewarped(
     data_regions: list[tuple[slice, slice]] = get_data_regions(
         grid_size,
         grid_size,
-        tag_data_gap=1,
-        data_padding=0,
+        tag_data_gap=tag_data_gap,
+        data_padding=data_padding,
     )
 
     if not data_regions:
@@ -180,7 +203,41 @@ def extract_data_from_dewarped(
             "No data regions could be determined from the decoded grid size."
         )
 
+    # This retrieves the color of the last 5 pixels which will always be the calibration colors (red, green, blue, black, white). This accounts for varying lighting.
+    last_data_region = data_regions[-1]
+    last_5_cells_average = []
+    for row in range(last_data_region[0].stop - 1, last_data_region[0].stop):
+        for col in range(last_data_region[1].stop - 5, last_data_region[1].stop):
+            y_start = row * cell_size
+            y_end = min((row + 1) * cell_size, dewarped_image.shape[0])
+            x_start = col * cell_size
+            x_end = min((col + 1) * cell_size, dewarped_image.shape[1])
+
+            cell = dewarped_image[y_start:y_end, x_start:x_end]
+
+            cell = cell[
+                cell.shape[0] // 4 : cell.shape[0] * 3 // 4,
+                cell.shape[1] // 4 : cell.shape[1] * 3 // 4,
+            ]
+
+            last_5_cells_average.append(np.mean(cell, axis=(0, 1)))
+
+    # see if last cell average color is close to white
+    if np.linalg.norm(last_5_cells_average[-1] - (255, 255, 255)) > 60:
+        raise ValueError(
+            f"Last cell is not white. Average color: {last_5_cells_average[-1]}. Possible data corruption"
+        )
+
+    (
+        corrected_red_color,
+        corrected_green_color,
+        corrected_blue_color,
+        corrected_black_color,
+        corrected_white_color,
+    ) = last_5_cells_average
+
     decoded_data_image = np.zeros((grid_size, grid_size, 3), dtype=np.uint8)
+    annotated_image = dewarped_image.copy()
 
     for row_slice, col_slice in data_regions:
         for row in range(row_slice.start, row_slice.stop):
@@ -191,28 +248,63 @@ def extract_data_from_dewarped(
                 x_end = min((col + 1) * cell_size, dewarped_image.shape[1])
 
                 cell = dewarped_image[y_start:y_end, x_start:x_end]
-                majority_color = get_majority_color(cell)
-                quantized_color = map_to_palette(majority_color)
+                quantized_color = map_to_palette(
+                    cell,
+                    corrected_red_color,
+                    corrected_blue_color,
+                    corrected_green_color,
+                    corrected_black_color,
+                    corrected_white_color,
+                )
                 decoded_data_image[row, col] = quantized_color
+
+                # draw rectangle around the cell
+                cv2.rectangle(
+                    annotated_image,
+                    (col * cell_size, row * cell_size),
+                    ((col + 1) * cell_size, (row + 1) * cell_size),
+                    quantized_color,
+                    1,
+                )
+                # draw circle at the center of the cell color of the majority color
+                cv2.circle(
+                    annotated_image,
+                    (
+                        col * cell_size + cell_size // 2,
+                        row * cell_size + cell_size // 2,
+                    ),
+                    5,
+                    quantized_color,
+                    -1,
+                )
+
+    # save the decoded data image
+    if debug:
+        cv2.imwrite("decoded_data_image.png", decoded_data_image)
+        cv2.imwrite("annotated_image.png", annotated_image)
 
     return decoded_data_image
 
 
-def process_image_to_data(image_path: str | Path) -> bytes | None:
+def process_image_to_data(image_path: str | Path, debug: bool = False) -> bytes | None:
     """Process an image to extract encoded data.
 
     Args:
         image_path: Path to the input image.
+        debug: If True, save intermediate images during processing.
 
     Returns:
         Decoded bytes if successful, None otherwise.
+
+    Raises:
+        ValueError: If exactly 4 April tags are not detected after filtering.
     """
-    result = detect_and_dewarp_image(image_path)
+    result = detect_and_dewarp_image(image_path, debug=debug)
     if result is None:
         return None
 
     dewarped_image, grid_size = result
-    decoded_data_image = extract_data_from_dewarped(dewarped_image, grid_size)
+    decoded_data_image = extract_data_from_dewarped(dewarped_image, grid_size, debug=debug)
 
     decoded_bytes = decode_image_data(
         decoded_data_image,
@@ -222,4 +314,3 @@ def process_image_to_data(image_path: str | Path) -> bytes | None:
     )
 
     return decoded_bytes
-
