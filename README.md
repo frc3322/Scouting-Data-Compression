@@ -3,7 +3,10 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A specialized Python system for encoding FRC (FIRST Robotics Competition) scouting data into visual images using heavy data compression and apriltags for data tag finding, enabling efficient data compression and transfer through camera capture. Designed specifically for scouting applications where structured match data needs to be quickly captured and transferred in environments with very limited connectivity.
+A specialized Python system for encoding FRC (FIRST Robotics Competition) scouting data into visual images using heavy data compression and Apriltags for data tag finding, enabling efficient data compression and transfer through camera capture. Designed specifically for scouting applications where structured match data needs to be quickly captured and transferred in environments with very limited connectivity.
+
+39 matches encoded to a data-code!
+<img width="1397" height="1413" alt="image" src="https://github.com/user-attachments/assets/a1df171f-46c0-4c20-a27a-5fd840eebe59" />
 
 ## 🚀 Features
 
@@ -100,7 +103,7 @@ Decode image with AprilTags back to CSV data.
 
 2. **Decoding Process:**
    - Image is processed to detect AprilTags
-   - AprilTags provide coordinate system for data regions
+   - AprilTags provide accurate corners for de-warping
    - Color pixels in data regions are decoded back to binary data
    - Binary data is uncompressed and unpacked back to CSV format
 
@@ -119,9 +122,9 @@ White (255, 255, 255) is reserved for background/filler.
 
 - **Competition Optimized**: Designed for fast data transfer in busy FRC competition environments
 - **High Capacity**: Scales with image size (2 bytes per 8 pixels) - can encode hundreds of match records
-- **Efficient Compression**: Zstandard compression reduces scouting data size by 60-80% for faster transfer
+- **Efficient Compression**: Zstandard compression and custom packing reduces scouting data size by 10X for better transfer
 - **Robust Detection**: AprilTag positioning works reliably even with poor lighting or camera angles
-- **Data Integrity**: Built-in verification ensures scouting data accuracy during transfer
+- **Data Integrity**: Built-in verification ensures scouting data is not corrupted. (not amazing, but it's there for very bad scans)
 - **No Network Required**: Visual transfer works without WiFi/bluetooth - perfect for competition venues
 
 ## 🏗️ Project Structure
@@ -161,13 +164,11 @@ image_path = encode_csv_to_image("match_data.csv")
 print(f"Scouting data encoded into: {image_path}")
 
 # In competition, this image would be displayed on a device
-# and captured by another team's scouting app
+# and captured by another device's code
 # For this example, we immediately decode it back
 print("Decoding scouting data...")
 csv_path = decode_image_to_csv(str(image_path))
 print(f"Scouting data recovered to: {csv_path}")
-
-print("Data transfer simulation complete!")
 ```
 
 **Typical FRC Competition Usage:**
@@ -175,9 +176,9 @@ print("Data transfer simulation complete!")
 1. **At Competition**: Scouting teams collect match data in CSV format
 2. **Data Encoding**: Convert CSV data to visual AprilTag images for transfer
 3. **Visual Transfer**: Display encoded images on tablets/phones
-4. **Data Capture**: Other teams capture images with their scouting apps
+4. **Data Capture**: Capture the data with a central laptop/tablet
 5. **Data Decoding**: Automatically extract CSV data from captured images
-6. **Data Aggregation**: Combine scouting data from multiple teams for analysis
+6. **Data Aggregation**: Combine scouting data from multiple sources/devices for analysis
 
 ## ⚠️ Error Handling
 
