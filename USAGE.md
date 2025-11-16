@@ -24,6 +24,9 @@ Encodes CSV data into an image embedded with AprilTags for data storage.
 ### `decode_image_to_csv.py`
 Decodes images containing AprilTags back into CSV data.
 
+### `camera_decoder.py`
+Interactive camera application for real-time decoding of AprilTag-encoded data.
+
 ## Command Line Usage
 
 ### Encoding CSV to Image
@@ -70,6 +73,29 @@ python decode_image_to_csv.py input.png output.csv packed_data.packed
 
 # Using uv
 uv run python decode_image_to_csv.py image.png
+```
+
+### Camera-Based Decoding
+
+```bash
+python camera_decoder.py
+```
+
+**Features:**
+- Opens camera feed in a window
+- Press SPACE to capture current frame and attempt decoding
+- Press ESC to exit the application
+- Plays success sound (high beep) when decoding succeeds
+- Plays failure sound (low beep) when decoding fails
+- Saves decoded CSV files to `decoded_csvs/` folder with timestamped names (format: decoded_YYYYMMDD_HHMMSS.csv)
+
+**Example:**
+```bash
+# Run the camera decoder
+python camera_decoder.py
+
+# Using uv
+uv run python camera_decoder.py
 ```
 
 ## Programmatic Usage
