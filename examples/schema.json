@@ -1,0 +1,213 @@
+[
+  {
+    "name": "ScoutName",
+    "kind": "enum",
+    "bits": 2,
+    "values": ["Jude", "Dillon", "", ""]
+  },
+  {
+    "name": "MatchNumber",
+    "kind": "int",
+    "bits": 8,
+    "int_max": 200
+  },
+  {
+    "name": "TeamNumber",
+    "kind": "int",
+    "bits": 14,
+    "int_max": 16383
+  },
+  {
+    "name": "Mobility",
+    "kind": "int",
+    "bits": 1,
+    "int_max": 1
+  },
+  {
+    "name": "AutonL1Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL1Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL2Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL2Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL3Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL3Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL4Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonL4Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "AutonBargeAttempted",
+    "kind": "int",
+    "bits": 0,
+    "int_max": 0
+  },
+  {
+    "name": "AutonBargeScored",
+    "kind": "int",
+    "bits": 0,
+    "int_max": 0
+  },
+  {
+    "name": "AutonProcessorAttempted",
+    "kind": "int",
+    "bits": 0,
+    "int_max": 0
+  },
+  {
+    "name": "AutonProcessorScored",
+    "kind": "int",
+    "bits": 0,
+    "int_max": 0
+  },
+  {
+    "name": "AutonAlgaeRemoved",
+    "kind": "int",
+    "bits": 0,
+    "int_max": 0
+  },
+  {
+    "name": "TeleopL1Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL1Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL2Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL2Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL3Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL3Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL4Attempted",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopL4Scored",
+    "kind": "int",
+    "bits": 4,
+    "int_max": 12
+  },
+  {
+    "name": "TeleopBargeAttempted",
+    "kind": "int",
+    "bits": 3,
+    "int_max": 7
+  },
+  {
+    "name": "TeleopBargeScored",
+    "kind": "int",
+    "bits": 3,
+    "int_max": 7
+  },
+  {
+    "name": "TeleopProcessorAttempted",
+    "kind": "int",
+    "bits": 3,
+    "int_max": 7
+  },
+  {
+    "name": "TeleopProcessorScored",
+    "kind": "int",
+    "bits": 3,
+    "int_max": 7
+  },
+  {
+    "name": "TeleopAlgaeRemoved",
+    "kind": "int",
+    "bits": 3,
+    "int_max": 7
+  },
+  {
+    "name": "ClimbSuccessful",
+    "kind": "int",
+    "bits": 1,
+    "int_max": 1
+  },
+  {
+    "name": "Climb",
+    "kind": "enum",
+    "bits": 2,
+    "values": ["None", "Shallow", "Deep", "Park"]
+  },
+  {
+    "name": "Breakdown",
+    "kind": "enum",
+    "bits": 1,
+    "values": ["False", "True"]
+  },
+  {
+    "name": "DefenseDescription",
+    "kind": "enum",
+    "bits": 0,
+    "values": [""]
+  },
+  {
+    "name": "Notes",
+    "kind": "enum",
+    "bits": 1,
+    "values": ["", "Some note"]
+  }
+]
+
