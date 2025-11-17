@@ -7,6 +7,7 @@ from pathlib import Path
 import traceback
 import argparse
 
+from src.common.schema import SchemaLoader
 from src.decoder.data_unpacker import decode, write_csv
 from src.decoder.image_processor import process_image_to_data
 
@@ -15,6 +16,7 @@ def decode_image_to_csv(
     image_path: str | Path,
     output_csv_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    schema_path: str | Path | None = None,
     debug: bool = False,
 ) -> Path:
     """Decode image with AprilTags back to CSV data.
@@ -23,6 +25,7 @@ def decode_image_to_csv(
         image_path: Path to input image file.
         output_csv_path: Optional path for output CSV. Defaults to image name with .csv extension.
         packed_file_path: Optional path for intermediate packed file. If None, uses a temporary file.
+        schema_path: Optional path to schema file (JSON or Python). If None, uses default schema.
         debug: If True, save intermediate images during processing.
 
     Returns:
@@ -37,6 +40,10 @@ def decode_image_to_csv(
         output_csv_path = image_path.with_suffix(".csv")
     else:
         output_csv_path = Path(output_csv_path)
+
+    schema = None
+    if schema_path is not None:
+        schema = SchemaLoader.load_schema(Path(schema_path))
 
     print(f"Processing image: {image_path}")
 
@@ -57,7 +64,7 @@ def decode_image_to_csv(
     print(f"Wrote packed data to: {packed_file_path}")
 
     try:
-        headers, rows = decode(packed_file_path)
+        headers, rows = decode(packed_file_path, schema=schema)
         print(f"Decoded {len(rows)} rows with {len(headers)} columns")
     except Exception as e:
         print(f"Error decoding packed data: {e}")
@@ -90,6 +97,11 @@ def main() -> None:
         help="Optional path for intermediate packed file"
     )
     parser.add_argument(
+        "--schema",
+        dest="schema_path",
+        help="Path to schema file (JSON or Python). If not provided, uses default schema.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Save intermediate images during processing"
@@ -102,6 +114,7 @@ def main() -> None:
             args.input_image,
             args.output_csv,
             args.packed_file,
+            schema_path=args.schema_path,
             debug=args.debug
         )
     except Exception:

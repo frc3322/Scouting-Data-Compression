@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """CLI script to encode CSV data into an image with AprilTags."""
 
+import argparse
 import sys
 from pathlib import Path
 
 import cv2
 
 from src.common.data_regions import get_data_regions
+from src.common.schema import SchemaLoader
 from src.encoder.data_packer import clean_csv_newlines, encode, read_csv
 from src.encoder.image_generator import (
     calculate_minimum_image_size,
@@ -18,6 +20,7 @@ def encode_csv_to_image(
     csv_path: str | Path,
     output_image_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    schema_path: str | Path | None = None,
 ) -> Path:
     """Encode CSV data into an image with AprilTags.
 
@@ -25,6 +28,7 @@ def encode_csv_to_image(
         csv_path: Path to input CSV file.
         output_image_path: Optional path for output image. Defaults to CSV name with .png extension.
         packed_file_path: Optional path for intermediate packed file. Defaults to CSV name with .packed extension.
+        schema_path: Optional path to schema file (JSON or Python). If None, uses default schema.
 
     Returns:
         Path to the created image file.
@@ -44,11 +48,15 @@ def encode_csv_to_image(
     else:
         packed_file_path = Path(packed_file_path)
 
+    schema = None
+    if schema_path is not None:
+        schema = SchemaLoader.load_schema(Path(schema_path))
+
     clean_csv_newlines(csv_path)
 
     headers, rows = read_csv(csv_path)
 
-    encode(headers, rows, packed_file_path)
+    encode(headers, rows, packed_file_path, schema=schema)
 
     packed_data = packed_file_path.read_bytes()
     print(f"Packed data size: {len(packed_data)} bytes")
@@ -120,16 +128,35 @@ def encode_csv_to_image(
 
 def main() -> None:
     """Main CLI entry point."""
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} INPUT.csv [OUTPUT.png] [PACKED.packed]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Encode CSV data into an image with AprilTags."
+    )
+    parser.add_argument("csv_path", help="Path to input CSV file")
+    parser.add_argument(
+        "output_image_path",
+        nargs="?",
+        help="Optional path for output image (defaults to CSV name with .png extension)",
+    )
+    parser.add_argument(
+        "packed_file_path",
+        nargs="?",
+        help="Optional path for intermediate packed file (defaults to CSV name with .packed extension)",
+    )
+    parser.add_argument(
+        "--schema",
+        dest="schema_path",
+        help="Path to schema file (JSON or Python). If not provided, uses default schema.",
+    )
 
-    csv_path = sys.argv[1]
-    output_image_path = sys.argv[2] if len(sys.argv) >= 3 else None
-    packed_file_path = sys.argv[3] if len(sys.argv) >= 4 else None
+    args = parser.parse_args()
 
     try:
-        encode_csv_to_image(csv_path, output_image_path, packed_file_path)
+        encode_csv_to_image(
+            args.csv_path,
+            args.output_image_path,
+            args.packed_file_path,
+            schema_path=args.schema_path,
+        )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

@@ -4,9 +4,9 @@ import csv
 import struct
 import zstandard
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
-from ..encoder.data_packer import SCHEMA
+from ..encoder.data_packer import ColumnSchema, SCHEMA as DEFAULT_SCHEMA
 
 
 class BitReader:
@@ -80,15 +80,20 @@ def unpack_columnar_bitplanes(
     return vals, offset
 
 
-def decode(in_path: Path) -> tuple[List[str], List[List[str]]]:
+def decode(
+    in_path: Path, schema: Optional[List[ColumnSchema]] = None
+) -> tuple[List[str], List[List[str]]]:
     """Decode packed binary format back to CSV data.
 
     Args:
         in_path: Path to packed file.
+        schema: Optional schema to use. If None, uses default SCHEMA.
 
     Returns:
         Tuple of (headers, rows).
     """
+    schema_to_use = schema if schema is not None else DEFAULT_SCHEMA
+
     data = in_path.read_bytes()
 
     if len(data) < 12:
@@ -105,7 +110,7 @@ def decode(in_path: Path) -> tuple[List[str], List[List[str]]]:
     data_bytes = decompressor.decompress(compressed_data, max_output_size=1024*1024)
 
     bytes_per_plane = (num_rows + 7) // 8
-    expected = sum(s.bits for s in SCHEMA if s.bits > 0) * bytes_per_plane
+    expected = sum(s.bits for s in schema_to_use if s.bits > 0) * bytes_per_plane
     if len(data_bytes) != expected:
         raise ValueError(
             f"Corrupt data length: {len(data_bytes)} (expected {expected})"
@@ -113,7 +118,7 @@ def decode(in_path: Path) -> tuple[List[str], List[List[str]]]:
 
     col_values: Dict[int, List[int]] = {}
     offset = 0
-    for col_idx, s in enumerate(SCHEMA):
+    for col_idx, s in enumerate(schema_to_use):
         if s.bits == 0:
             continue
         vals, offset = unpack_columnar_bitplanes(
@@ -124,7 +129,7 @@ def decode(in_path: Path) -> tuple[List[str], List[List[str]]]:
     rows: List[List[str]] = []
     for r in range(num_rows):
         row: List[str] = []
-        for col_idx, s in enumerate(SCHEMA):
+        for col_idx, s in enumerate(schema_to_use):
             if s.bits == 0:
                 if s.kind == "int":
                     v_str = "0"
@@ -145,7 +150,7 @@ def decode(in_path: Path) -> tuple[List[str], List[List[str]]]:
                 row.append(s.values[value])
         rows.append(row)
 
-    headers = [s.name for s in SCHEMA]
+    headers = [s.name for s in schema_to_use]
     return headers, rows
 
 
