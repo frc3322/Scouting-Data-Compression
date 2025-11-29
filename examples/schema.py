@@ -1,6 +1,6 @@
 """Example Python schema file for FRC scouting data encoding."""
 
-from src.encoder.data_packer import ColumnSchema
+from src.common.schema import ColumnSchema
 
 SCHEMA = [
     ColumnSchema(

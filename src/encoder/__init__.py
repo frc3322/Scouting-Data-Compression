@@ -1,7 +1,8 @@
 """Encoding modules for CSV to image conversion."""
 
 from .color_encoder import encode_2bytes_to_rgb, encode_bytes_to_rgb
-from .data_packer import clean_csv_newlines, encode, read_csv, SCHEMA
+from .data_packer import clean_csv_newlines, encode, read_csv
+from ..common.schema import SCHEMA
 from .image_generator import calculate_minimum_image_size, create_encoded_image
 
 __all__ = [

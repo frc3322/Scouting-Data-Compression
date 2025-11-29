@@ -6,7 +6,7 @@ import zstandard
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from ..encoder.data_packer import ColumnSchema, SCHEMA as DEFAULT_SCHEMA
+from ..common.schema import ColumnSchema, SCHEMA as DEFAULT_SCHEMA
 
 
 class BitReader:

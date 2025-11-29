@@ -134,7 +134,7 @@ Python schemas allow for comments, logic, and dynamic generation. Save with `.py
 
 **Example (`schema.py`):**
 ```python
-from src.encoder.data_packer import ColumnSchema
+from src.common.schema import ColumnSchema
 
 SCHEMA = [
     ColumnSchema(name="TeamNumber", kind="int", bits=10, int_max=9999),

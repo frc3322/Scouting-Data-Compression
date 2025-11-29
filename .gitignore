@@ -12,3 +12,5 @@ __pycache__/
 *.pyzwzw
 *.cpython
 *.cpython-312.pyc
+
+test_*
