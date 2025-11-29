@@ -6,6 +6,7 @@ import pupil_apriltags as apriltag
 from pathlib import Path
 
 from ..common.data_regions import get_data_regions
+from ..common.color_palette import palette_to_bgr
 from .color_decoder import decode_image_data, map_to_palette
 
 
@@ -176,6 +177,7 @@ def extract_data_from_dewarped(
     tag_data_gap: int = 1,
     data_padding: int = 0,
     debug: bool = False,
+    palette_bgr: list[tuple[int, int, int]] | None = None,
 ) -> np.ndarray:
     """Extract quantized data from a dewarped image.
 
@@ -185,10 +187,17 @@ def extract_data_from_dewarped(
         debug: If True, save intermediate images during processing.
         tag_data_gap: Number of grid cells between AprilTags and data.
         data_padding: Number of grid cells padding data from outer edges.
+        palette_bgr: Optional list of BGR tuples for color palette. If None, uses default 4-color palette.
 
     Returns:
         Quantized data image array.
     """
+    if palette_bgr is None:
+        from ..common.constants import DATA_COLOR_SEQUENCE
+        palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
+
+    num_calibration_colors = len(palette_bgr)
+
     cell_size = dewarped_image.shape[0] // grid_size
 
     data_regions: list[tuple[slice, slice]] = get_data_regions(
@@ -203,11 +212,15 @@ def extract_data_from_dewarped(
             "No data regions could be determined from the decoded grid size."
         )
 
-    # This retrieves the color of the last 5 pixels which will always be the calibration colors (red, green, blue, black, white). This accounts for varying lighting.
+    # This retrieves the color of the last N pixels which are the calibration colors from the palette.
+    # This accounts for varying lighting conditions.
     last_data_region = data_regions[-1]
-    last_5_cells_average = []
+    calibration_cells_average = []
     for row in range(last_data_region[0].stop - 1, last_data_region[0].stop):
-        for col in range(last_data_region[1].stop - 5, last_data_region[1].stop):
+        for col in range(
+            last_data_region[1].stop - num_calibration_colors,
+            last_data_region[1].stop,
+        ):
             y_start = row * cell_size
             y_end = min((row + 1) * cell_size, dewarped_image.shape[0])
             x_start = col * cell_size
@@ -220,21 +233,16 @@ def extract_data_from_dewarped(
                 cell.shape[1] // 4 : cell.shape[1] * 3 // 4,
             ]
 
-            last_5_cells_average.append(np.mean(cell, axis=(0, 1)))
+            calibration_cells_average.append(np.mean(cell, axis=(0, 1)))
 
-    # see if last cell average color is close to white
-    if np.linalg.norm(last_5_cells_average[-1] - (255, 255, 255)) > 60:
-        raise ValueError(
-            f"Last cell is not white. Average color: {last_5_cells_average[-1]}. Possible data corruption"
+    # Build corrected palette from calibration cells
+    # Use calibration cells to map to palette colors, wrapping if needed
+    corrected_palette_bgr = []
+    for i in range(len(palette_bgr)):
+        calibration_idx = i % len(calibration_cells_average)
+        corrected_palette_bgr.append(
+            tuple(int(c) for c in calibration_cells_average[calibration_idx])
         )
-
-    (
-        corrected_red_color,
-        corrected_green_color,
-        corrected_blue_color,
-        corrected_black_color,
-        corrected_white_color,
-    ) = last_5_cells_average
 
     decoded_data_image = np.zeros((grid_size, grid_size, 3), dtype=np.uint8)
     annotated_image = dewarped_image.copy()
@@ -250,11 +258,8 @@ def extract_data_from_dewarped(
                 cell = dewarped_image[y_start:y_end, x_start:x_end]
                 quantized_color = map_to_palette(
                     cell,
-                    corrected_red_color,
-                    corrected_blue_color,
-                    corrected_green_color,
-                    corrected_black_color,
-                    corrected_white_color,
+                    corrected_palette_bgr,
+                    palette_bgr,
                 )
                 decoded_data_image[row, col] = quantized_color
 
@@ -286,12 +291,17 @@ def extract_data_from_dewarped(
     return decoded_data_image
 
 
-def process_image_to_data(image_path: str | Path, debug: bool = False) -> bytes | None:
+def process_image_to_data(
+    image_path: str | Path,
+    debug: bool = False,
+    palette_bgr: list[tuple[int, int, int]] | None = None,
+) -> bytes | None:
     """Process an image to extract encoded data.
 
     Args:
         image_path: Path to the input image.
         debug: If True, save intermediate images during processing.
+        palette_bgr: Optional list of BGR tuples for color palette. If None, uses default 4-color palette.
 
     Returns:
         Decoded bytes if successful, None otherwise.
@@ -299,18 +309,27 @@ def process_image_to_data(image_path: str | Path, debug: bool = False) -> bytes 
     Raises:
         ValueError: If exactly 4 April tags are not detected after filtering.
     """
+    if palette_bgr is None:
+        from ..common.constants import DATA_COLOR_SEQUENCE
+        palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
+
     result = detect_and_dewarp_image(image_path, debug=debug)
     if result is None:
         return None
 
     dewarped_image, grid_size = result
-    decoded_data_image = extract_data_from_dewarped(dewarped_image, grid_size, debug=debug)
+    decoded_data_image = extract_data_from_dewarped(
+        dewarped_image, grid_size, debug=debug, palette_bgr=palette_bgr
+    )
 
+    num_calibration_colors = len(palette_bgr)
     decoded_bytes = decode_image_data(
         decoded_data_image,
         original_length=None,
         tag_data_gap=1,
         data_padding=0,
+        palette_bgr=palette_bgr,
+        num_calibration_pixels=num_calibration_colors,
     )
 
     return decoded_bytes

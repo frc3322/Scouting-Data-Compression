@@ -1,30 +1,19 @@
 """Color decoding utilities for extracting RGB values from images."""
 
 import numpy as np
-from ..common.constants import (
-    DATA_COLOR_MAP,
-    PALETTE_COLORS,
-)
 from ..common.data_regions import get_data_regions
+from ..common.color_palette import calculate_bits_per_pixel
 
 
 def assign_palette_indices(
     pixel_values: np.ndarray,
-    corrected_red_color: tuple[int, int, int],
-    corrected_blue_color: tuple[int, int, int],
-    corrected_green_color: tuple[int, int, int],
-    corrected_black_color: tuple[int, int, int],
-    corrected_white_color: tuple[int, int, int],
+    corrected_palette_bgr: list[tuple[int, int, int]],
 ) -> np.ndarray:
     """Assign each pixel in the array to the closest palette index using corrected colors.
 
     Args:
         pixel_values: Array of pixel colors shaped (N, 3) or (3,).
-        corrected_red_color: Corrected red BGR tuple.
-        corrected_blue_color: Corrected blue BGR tuple.
-        corrected_green_color: Corrected green BGR tuple.
-        corrected_black_color: Corrected black BGR tuple.
-        corrected_white_color: Corrected white BGR tuple.
+        corrected_palette_bgr: List of corrected BGR tuples representing the palette colors.
 
     Returns:
         Array of palette indices that best match each pixel.
@@ -32,45 +21,28 @@ def assign_palette_indices(
     pixel_array = np.atleast_2d(pixel_values).astype(np.float32, copy=False)
     np.clip(pixel_array, 0.0, 255.0, out=pixel_array)
 
-    # Build corrected palette from the provided corrected RGB tuples
-    corrected_palette = np.array(
-        [
-            corrected_red_color,  # Red BGR
-            corrected_green_color,  # Green BGR
-            corrected_blue_color,  # Blue BGR
-            corrected_black_color,  # Black BGR
-            corrected_white_color,  # White BGR
-        ],
-        dtype=np.float32,
-    )
+    corrected_palette_array = np.array(corrected_palette_bgr, dtype=np.float32)
 
     color_distances = np.linalg.norm(
-        pixel_array[:, np.newaxis, :] - corrected_palette[np.newaxis, :, :],
+        pixel_array[:, np.newaxis, :] - corrected_palette_array[np.newaxis, :, :],
         axis=2,
     )
     nearest_palette_indices = np.argmin(color_distances, axis=1).astype(np.int32)
 
-    # return the nearest palette index for each pixel
     return nearest_palette_indices
 
 
 def map_to_palette(
     cell: np.ndarray,
-    corrected_red_color: tuple[int, int, int],
-    corrected_blue_color: tuple[int, int, int],
-    corrected_green_color: tuple[int, int, int],
-    corrected_black_color: tuple[int, int, int],
-    corrected_white_color: tuple[int, int, int],
+    corrected_palette_bgr: list[tuple[int, int, int]],
+    original_palette_bgr: list[tuple[int, int, int]],
 ) -> tuple[int, int, int]:
     """Map an image cell to the nearest palette entry. Sees what palette color is most common in the cell.
 
     Args:
         cell: Image cell as numpy array.
-        corrected_red_color: Corrected red BGR tuple.
-        corrected_blue_color: Corrected blue BGR tuple.
-        corrected_green_color: Corrected green BGR tuple.
-        corrected_black_color: Corrected black BGR tuple.
-        corrected_white_color: Corrected white BGR tuple.
+        corrected_palette_bgr: List of corrected BGR tuples from calibration.
+        original_palette_bgr: List of original BGR tuples for the palette.
 
     Returns:
         Palette color in BGR order.
@@ -88,49 +60,91 @@ def map_to_palette(
         pixel_values = cell
 
     # go through each pixel in the cell and assign a palette index
-    palette_indices = assign_palette_indices(
-        pixel_values,
-        corrected_red_color,
-        corrected_blue_color,
-        corrected_green_color,
-        corrected_black_color,
-        corrected_white_color,
-    )
+    palette_indices = assign_palette_indices(pixel_values, corrected_palette_bgr)
 
     # count the number of pixels for each palette index
-    counts = np.bincount(palette_indices, minlength=len(PALETTE_COLORS))
+    counts = np.bincount(palette_indices, minlength=len(original_palette_bgr))
 
     # get the palette index with the highest count
     majority_palette_idx = int(np.argmax(counts))
 
-    # get the color for the majority palette index
-    majority_color = PALETTE_COLORS[majority_palette_idx]
-    return tuple(int(channel) for channel in majority_color)
+    # get the color for the majority palette index from original palette
+    majority_color = original_palette_bgr[majority_palette_idx]
+    return majority_color
 
 
-def decode_rgb_to_2bytes(rgb_list: list[tuple[int, int, int]]) -> tuple[int, int]:
-    """Decode a list of BGR values back to 2 bytes.
+def decode_rgb_to_byte(
+    rgb_list: list[tuple[int, int, int]], palette_bgr: list[tuple[int, int, int]]
+) -> int:
+    """Decode a list of BGR values back to a single byte using dynamic palette.
 
     Args:
-        rgb_list: List of 8 BGR tuples.
+        rgb_list: List of BGR tuples (number depends on bits per pixel).
+        palette_bgr: List of BGR tuples representing the color palette.
+
+    Returns:
+        Decoded byte value.
+    """
+    import math
+    
+    bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
+    pixels_per_byte = math.ceil(8 / bits_per_pixel)
+
+    if len(rgb_list) < pixels_per_byte:
+        rgb_list.extend([palette_bgr[0]] * (pixels_per_byte - len(rgb_list)))
+
+    color_to_index: dict[tuple[int, int, int], int] = {
+        color: idx for idx, color in enumerate(palette_bgr)
+    }
+
+    byte_value = 0
+    for index, rgb in enumerate(rgb_list[:pixels_per_byte]):
+        bit_offset = index * bits_per_pixel
+        if bit_offset < 8:
+            color_index = color_to_index.get(rgb, 0)
+            byte_value |= color_index << bit_offset
+
+    return byte_value
+
+
+def decode_rgb_to_2bytes(
+    rgb_list: list[tuple[int, int, int]], palette_bgr: list[tuple[int, int, int]]
+) -> tuple[int, int]:
+    """Decode a list of BGR values back to 2 bytes using dynamic palette.
+
+    Args:
+        rgb_list: List of BGR tuples (number depends on bits per pixel).
+        palette_bgr: List of BGR tuples representing the color palette.
 
     Returns:
         Tuple of (byte1, byte2).
     """
-    color_to_value: dict[tuple[int, int, int], int] = {
-        color: value for value, color in DATA_COLOR_MAP.items()
-    }
-    color_to_value[(255, 255, 255)] = 3
+    bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
+    
+    if 16 % bits_per_pixel == 0:
+        pixels_per_2bytes = 16 // bits_per_pixel
 
-    combined_value = 0
-    for index, rgb in enumerate(rgb_list):
-        mapped_value = color_to_value.get(rgb, 3)
-        combined_value |= mapped_value << (index * 2)
+        if len(rgb_list) < pixels_per_2bytes:
+            rgb_list.extend([palette_bgr[0]] * (pixels_per_2bytes - len(rgb_list)))
 
-    byte1 = (combined_value >> 8) & 0xFF
-    byte2 = combined_value & 0xFF
+        color_to_index: dict[tuple[int, int, int], int] = {
+            color: idx for idx, color in enumerate(palette_bgr)
+        }
 
-    return (byte1, byte2)
+        combined_value = 0
+        for index, rgb in enumerate(rgb_list[:pixels_per_2bytes]):
+            color_index = color_to_index.get(rgb, 0)
+            combined_value |= color_index << (index * bits_per_pixel)
+
+        byte1 = (combined_value >> 8) & 0xFF
+        byte2 = combined_value & 0xFF
+
+        return (byte1, byte2)
+    else:
+        pixels_per_byte = 8 // bits_per_pixel
+        byte1 = decode_rgb_to_byte(rgb_list[:pixels_per_byte], palette_bgr)
+        byte2 = decode_rgb_to_byte(rgb_list[pixels_per_byte:], palette_bgr)
+        return (byte1, byte2)
 
 
 def decode_image_data(
@@ -138,6 +152,8 @@ def decode_image_data(
     original_length: int | None = None,
     tag_data_gap: int = 1,
     data_padding: int = 0,
+    palette_bgr: list[tuple[int, int, int]] | None = None,
+    num_calibration_pixels: int = 6,
 ) -> bytes:
     """Decode data from an encoded image.
 
@@ -146,10 +162,29 @@ def decode_image_data(
         original_length: Optional original data length to truncate padding.
         tag_data_gap: Gap between tags and data.
         data_padding: Padding within data regions.
+        palette_bgr: Optional list of BGR tuples for color palette. If None, uses default 4-color palette.
+        num_calibration_pixels: Number of calibration pixels at the end of data.
 
     Returns:
         Decoded bytes.
     """
+    if palette_bgr is None:
+        from ..common.constants import DATA_COLOR_SEQUENCE
+        from ..common.color_palette import palette_to_bgr
+        palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
+
+    import math
+    
+    bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
+    pixels_per_byte = math.ceil(8 / bits_per_pixel)
+    
+    if 16 % bits_per_pixel == 0:
+        pixels_per_2bytes = 16 // bits_per_pixel
+        encode_by_2bytes = True
+    else:
+        encode_by_2bytes = False
+        pixels_per_2bytes = pixels_per_byte * 2
+
     data_regions = get_data_regions(
         image.shape[1], image.shape[0], tag_data_gap, data_padding
     )
@@ -161,17 +196,32 @@ def decode_image_data(
                 r, g, b = image[row, col]
                 pixel_list.append((r, g, b))
 
+    # Remove calibration pixels from the end
+    if len(pixel_list) >= num_calibration_pixels:
+        pixel_list = pixel_list[:-num_calibration_pixels]
+
     if original_length is not None:
-        expected_pixels = ((original_length + 1) // 2) * 8
+        if encode_by_2bytes:
+            expected_pixels = ((original_length + 1) // 2) * pixels_per_2bytes
+        else:
+            expected_pixels = original_length * pixels_per_byte
         pixel_list = pixel_list[:expected_pixels]
 
     decoded_bytes = []
-    for i in range(0, len(pixel_list), 8):
-        rgb_group = pixel_list[i : i + 8]
-        while len(rgb_group) < 8:
-            rgb_group.append((0, 0, 0))
-        byte1, byte2 = decode_rgb_to_2bytes(rgb_group)
-        decoded_bytes.extend([byte1, byte2])
+    if encode_by_2bytes:
+        for i in range(0, len(pixel_list), pixels_per_2bytes):
+            rgb_group = pixel_list[i : i + pixels_per_2bytes]
+            while len(rgb_group) < pixels_per_2bytes:
+                rgb_group.append(palette_bgr[0])
+            byte1, byte2 = decode_rgb_to_2bytes(rgb_group, palette_bgr)
+            decoded_bytes.extend([byte1, byte2])
+    else:
+        for i in range(0, len(pixel_list), pixels_per_byte):
+            rgb_group = pixel_list[i : i + pixels_per_byte]
+            while len(rgb_group) < pixels_per_byte:
+                rgb_group.append(palette_bgr[0])
+            byte_val = decode_rgb_to_byte(rgb_group, palette_bgr)
+            decoded_bytes.append(byte_val)
 
     result = bytes(decoded_bytes)
 
