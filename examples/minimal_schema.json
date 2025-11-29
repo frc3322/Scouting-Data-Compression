@@ -1,0 +1,33 @@
+[
+  {
+    "name": "TeamNumber",
+    "kind": "int",
+    "bits": 10,
+    "int_max": 9999
+  },
+  {
+    "name": "MatchNumber",
+    "kind": "int",
+    "bits": 6,
+    "int_max": 63
+  },
+  {
+    "name": "Score",
+    "kind": "int",
+    "bits": 8,
+    "int_max": 255
+  },
+  {
+    "name": "Result",
+    "kind": "enum",
+    "bits": 2,
+    "values": ["Win", "Loss", "Tie"]
+  },
+  {
+    "name": "Notes",
+    "kind": "enum",
+    "bits": 1,
+    "values": ["", "Important"]
+  }
+]
+

@@ -1,12 +1,13 @@
 """Data packing and compression for encoding."""
 
 import csv
-import math
 import struct
 import zstandard
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
+
+from ..common.schema import SchemaLoader
 
 
 ColumnKind = Literal["int", "enum"]
@@ -134,30 +135,6 @@ def pack_columnar_bitplanes(
     return bytes(out)
 
 
-def validate_schema() -> None:
-    """Ensure hard-coded schema is consistent."""
-    for s in SCHEMA:
-        if s.kind == "int":
-            if s.int_max is None:
-                raise ValueError(f"int column {s.name} missing int_max")
-            if s.bits > 0:
-                max_representable = (1 << s.bits) - 1
-                if s.int_max > max_representable:
-                    raise ValueError(
-                        f"Column {s.name}: int_max {s.int_max} exceeds "
-                        f"{s.bits}-bit capacity ({max_representable})"
-                    )
-        elif s.kind == "enum":
-            if s.values is None:
-                raise ValueError(f"enum column {s.name} missing values")
-            count = len(s.values)
-            if count > 1 and s.bits < math.ceil(math.log2(count)):
-                raise ValueError(
-                    f"Column {s.name}: bits={s.bits} insufficient for "
-                    f"{count} enum values"
-                )
-
-
 def read_csv(path: Path) -> tuple[List[str], List[List[str]]]:
     """Read CSV file and return headers and rows.
 
@@ -198,26 +175,39 @@ def clean_csv_newlines(path: Path) -> None:
         writer.writerows(cleaned_rows)
 
 
-def encode(headers: List[str], rows: List[List[str]], out_path: Path) -> None:
+def encode(
+    headers: List[str],
+    rows: List[List[str]],
+    out_path: Path,
+    schema: Optional[List[ColumnSchema]] = None,
+) -> None:
     """Encode CSV data into packed binary format.
 
     Args:
         headers: CSV column headers.
         rows: CSV data rows.
         out_path: Output path for packed file.
+        schema: Optional schema to use. If None, uses default SCHEMA.
     """
-    validate_schema()
+    schema_to_use = schema if schema is not None else SCHEMA
+    SchemaLoader.validate_schema(schema_to_use)
 
-    schema_names = [s.name for s in SCHEMA]
-    if headers != schema_names:
+    schema_names = [s.name for s in schema_to_use]
+
+    header_to_csv_idx: Dict[str, int] = {
+        name: idx for idx, name in enumerate(headers)
+    }
+
+    missing_columns = [name for name in schema_names if name not in header_to_csv_idx]
+    if missing_columns:
         raise ValueError(
-            f"CSV headers {headers} don't match hard-coded schema {schema_names}"
+            f"CSV missing required columns from schema: {missing_columns}"
         )
 
     num_rows = len(rows)
 
     enum_lookups: List[Optional[Dict[str, int]]] = []
-    for s in SCHEMA:
+    for s in schema_to_use:
         if s.kind == "enum":
             assert s.values is not None
             enum_lookups.append({v: i for i, v in enumerate(s.values)})
@@ -226,12 +216,18 @@ def encode(headers: List[str], rows: List[List[str]], out_path: Path) -> None:
 
     values_by_col: List[List[int]] = []
     bits_by_col: List[int] = []
-    for col_idx, s in enumerate(SCHEMA):
+    for col_idx, s in enumerate(schema_to_use):
         if s.bits == 0:
             continue
         col_vals: List[int] = []
+        csv_col_idx = header_to_csv_idx[s.name]
         for row in rows:
-            raw = row[col_idx].strip("\n")
+            if csv_col_idx >= len(row):
+                raise ValueError(
+                    f"Row has fewer columns than expected. "
+                    f"Column {s.name} (index {csv_col_idx}) not found in row"
+                )
+            raw = row[csv_col_idx].strip("\n")
             raw = "" if raw == " " else raw
             if s.kind == "int":
                 value = int(raw)

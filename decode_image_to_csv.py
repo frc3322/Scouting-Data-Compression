@@ -7,6 +7,7 @@ from pathlib import Path
 import traceback
 import argparse
 
+from src.common.schema import SchemaLoader
 from src.common.color_palette import (
     load_color_palette,
     usable_color_set,
@@ -20,6 +21,7 @@ def decode_image_to_csv(
     image_path: str | Path,
     output_csv_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    schema_path: str | Path | None = None,
     debug: bool = False,
     palette_path: str | Path | None = None,
 ) -> Path:
@@ -29,6 +31,7 @@ def decode_image_to_csv(
         image_path: Path to input image file.
         output_csv_path: Optional path for output CSV. Defaults to image name with .csv extension.
         packed_file_path: Optional path for intermediate packed file. If None, uses a temporary file.
+        schema_path: Optional path to schema file (JSON or Python). If None, uses default schema.
         debug: If True, save intermediate images during processing.
         palette_path: Optional path to color palette JSON file. Defaults to src/common/color_palette.json.
 
@@ -60,6 +63,10 @@ def decode_image_to_csv(
     else:
         output_csv_path = Path(output_csv_path)
 
+    schema = None
+    if schema_path is not None:
+        schema = SchemaLoader.load_schema(Path(schema_path))
+
     print(f"Processing image: {image_path}")
 
     decoded_bytes = process_image_to_data(image_path, debug=debug, palette_bgr=palette_bgr)
@@ -79,7 +86,7 @@ def decode_image_to_csv(
     print(f"Wrote packed data to: {packed_file_path}")
 
     try:
-        headers, rows = decode(packed_file_path)
+        headers, rows = decode(packed_file_path, schema=schema)
         print(f"Decoded {len(rows)} rows with {len(headers)} columns")
     except Exception as e:
         print(f"Error decoding packed data: {e}")
@@ -112,6 +119,11 @@ def main() -> None:
         help="Optional path for intermediate packed file"
     )
     parser.add_argument(
+        "--schema",
+        dest="schema_path",
+        help="Path to schema file (JSON or Python). If not provided, uses default schema.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Save intermediate images during processing"
@@ -129,6 +141,7 @@ def main() -> None:
             args.input_image,
             args.output_csv,
             args.packed_file,
+            schema_path=args.schema_path,
             debug=args.debug,
             palette_path=args.palette,
         )

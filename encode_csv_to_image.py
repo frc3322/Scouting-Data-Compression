@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """CLI script to encode CSV data into an image with AprilTags."""
 
+import argparse
 import sys
 from pathlib import Path
 
 import cv2
 
 from src.common.data_regions import get_data_regions
+from src.common.schema import SchemaLoader
 from src.common.color_palette import (
     load_color_palette,
     usable_color_set,
@@ -23,6 +25,7 @@ def encode_csv_to_image(
     csv_path: str | Path,
     output_image_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    schema_path: str | Path | None = None,
     palette_path: str | Path | None = None,
 ) -> Path:
     """Encode CSV data into an image with AprilTags.
@@ -31,6 +34,7 @@ def encode_csv_to_image(
         csv_path: Path to input CSV file.
         output_image_path: Optional path for output image. Defaults to CSV name with .png extension.
         packed_file_path: Optional path for intermediate packed file. Defaults to CSV name with .packed extension.
+        schema_path: Optional path to schema file (JSON or Python). If None, uses default schema.
         palette_path: Optional path to color palette JSON file. Defaults to src/common/color_palette.json.
 
     Returns:
@@ -66,11 +70,15 @@ def encode_csv_to_image(
     else:
         packed_file_path = Path(packed_file_path)
 
+    schema = None
+    if schema_path is not None:
+        schema = SchemaLoader.load_schema(Path(schema_path))
+
     clean_csv_newlines(csv_path)
 
     headers, rows = read_csv(csv_path)
 
-    encode(headers, rows, packed_file_path)
+    encode(headers, rows, packed_file_path, schema=schema)
 
     packed_data = packed_file_path.read_bytes()
     print(f"Packed data size: {len(packed_data)} bytes")
@@ -160,22 +168,26 @@ def encode_csv_to_image(
 
 def main() -> None:
     """Main CLI entry point."""
-    import argparse
-
     parser = argparse.ArgumentParser(
         description="Encode CSV data into an image with AprilTags."
     )
-    parser.add_argument("input_csv", help="Path to input CSV file")
+    parser.add_argument("csv_path", help="Path to input CSV file")
     parser.add_argument(
-        "output_image",
+        "output_image_path",
         nargs="?",
-        help="Optional path for output image (defaults to input CSV name with .png extension)",
+        help="Optional path for output image (defaults to CSV name with .png extension)",
     )
     parser.add_argument(
-        "packed_file",
+        "packed_file_path",
         nargs="?",
-        help="Optional path for intermediate packed file (defaults to input CSV name with .packed extension)",
+        help="Optional path for intermediate packed file (defaults to CSV name with .packed extension)",
     )
+    parser.add_argument(
+        "--schema",
+        dest="schema_path",
+        help="Path to schema file (JSON or Python). If not provided, uses default schema.",
+    )
+    
     parser.add_argument(
         "--palette",
         type=str,
@@ -186,9 +198,10 @@ def main() -> None:
 
     try:
         encode_csv_to_image(
-            args.input_csv,
-            args.output_image,
-            args.packed_file,
+            args.csv_path,
+            args.output_image_path,
+            args.packed_file_path,
+            schema_path=args.schema_path,
             palette_path=args.palette,
         )
     except Exception as e:
