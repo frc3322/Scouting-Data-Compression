@@ -190,8 +190,9 @@ def decode_image_to_csv(
    - AprilTags provide spatial reference for data extraction
 
 2. **Decoding Process:**
-   - Image is processed to detect AprilTags
-   - AprilTags provide coordinate system for data regions
+   - Image is processed to detect three AprilTags (IDs 0, 1, 2)
+   - AprilTags provide coordinate system for data regions and orientation detection
+   - Tag IDs determine correct image orientation (rotation-agnostic decoding)
    - Color pixels in data regions are decoded back to binary data
    - Binary data is uncompressed and unpacked back to CSV format
 

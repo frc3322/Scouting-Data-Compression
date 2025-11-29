@@ -14,7 +14,7 @@ A specialized Python system for encoding FRC (FIRST Robotics Competition) scouti
 - **High Compression**: Custom data packing and Zstandard compression significantly reduces scouting data size for efficient storage
 - **Visual Data Transfer**: Convert structured CSV scouting data into images that can be captured by phones/tablets
 - **Real-time Processing**: Camera-based live decoding with visual feedback for instant data capture
-- **Robust Detection**: AprilTag-based spatial reference ensures reliable data extraction even in challenging conditions
+- **Robust Detection**: Three AprilTag-based spatial reference (rotation-agnostic) ensures reliable data extraction even in challenging conditions
 - **Color Encoding**: Pure RGB color palette optimized for camera capture and reliable data extraction
 - **Error Detection**: Built-in verification comparing original vs decoded data to ensure data integrity
 
@@ -102,8 +102,9 @@ Decode image with AprilTags back to CSV data.
    - AprilTags provide spatial reference for data extraction
 
 2. **Decoding Process:**
-   - Image is processed to detect AprilTags
-   - AprilTags provide accurate corners for de-warping
+   - Image is processed to detect three AprilTags (IDs 0, 1, 2)
+   - AprilTags provide accurate corners for de-warping and orientation detection
+   - Tag IDs are used to determine correct image orientation (rotation-agnostic)
    - Color pixels in data regions are decoded back to binary data
    - Binary data is uncompressed and unpacked back to CSV format
 
@@ -123,7 +124,8 @@ White (255, 255, 255) is reserved for background/filler.
 - **Competition Optimized**: Designed for fast data transfer in busy FRC competition environments
 - **High Capacity**: Scales with image size (2 bytes per 8 pixels) - can encode hundreds of match records
 - **Efficient Compression**: Zstandard compression and custom packing reduces scouting data size by 10X for better transfer
-- **Robust Detection**: AprilTag positioning works reliably even with poor lighting or camera angles
+- **Robust Detection**: Three AprilTag positioning (tag 0 in top-left, tag 1 in top-right, tag 2 in bottom-left) works reliably even with poor lighting or camera angles
+- **Rotation-Agnostic**: Tag IDs enable automatic orientation detection, allowing decoding from any rotation
 - **Data Integrity**: Built-in verification ensures scouting data is not corrupted. (not amazing, but it's there for very bad scans)
 - **No Network Required**: Visual transfer works without WiFi/bluetooth - perfect for competition venues
 
