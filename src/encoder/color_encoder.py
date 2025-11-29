@@ -1,6 +1,6 @@
 """Color encoding utilities for converting bytes to RGB values."""
 
-from ..common.color_palette import palette_to_bgr, calculate_bits_per_pixel
+from ..common.color_palette import calculate_bits_per_pixel
 
 
 def encode_byte_to_rgb(

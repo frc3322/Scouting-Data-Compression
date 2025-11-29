@@ -119,9 +119,11 @@ def main() -> None:
 
         # Draw detections on the frame
         frame_with_detections = draw_detections(frame, detections)
-           
+
         # resize the frame to 1/4 size
-        frame_with_detections = cv2.resize(frame_with_detections, (0, 0), fx=0.25, fy=0.25)
+        frame_with_detections = cv2.resize(
+            frame_with_detections, (0, 0), fx=0.25, fy=0.25
+        )
 
         print(f"Found {len(detections)} AprilTag(s) in the image.")
 

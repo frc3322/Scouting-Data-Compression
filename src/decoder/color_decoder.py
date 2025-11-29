@@ -86,7 +86,7 @@ def decode_rgb_to_byte(
         Decoded byte value.
     """
     import math
-    
+
     bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
     pixels_per_byte = math.ceil(8 / bits_per_pixel)
 
@@ -120,7 +120,7 @@ def decode_rgb_to_2bytes(
         Tuple of (byte1, byte2).
     """
     bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
-    
+
     if 16 % bits_per_pixel == 0:
         pixels_per_2bytes = 16 // bits_per_pixel
 
@@ -171,13 +171,14 @@ def decode_image_data(
     if palette_bgr is None:
         from ..common.constants import DATA_COLOR_SEQUENCE
         from ..common.color_palette import palette_to_bgr
+
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     import math
-    
+
     bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
     pixels_per_byte = math.ceil(8 / bits_per_pixel)
-    
+
     if 16 % bits_per_pixel == 0:
         pixels_per_2bytes = 16 // bits_per_pixel
         encode_by_2bytes = True
