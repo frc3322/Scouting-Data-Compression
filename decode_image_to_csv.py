@@ -7,6 +7,11 @@ from pathlib import Path
 import traceback
 import argparse
 
+from src.common.color_palette import (
+    load_color_palette,
+    usable_color_set,
+    palette_to_bgr,
+)
 from src.decoder.data_unpacker import decode, write_csv
 from src.decoder.image_processor import process_image_to_data
 
@@ -16,6 +21,7 @@ def decode_image_to_csv(
     output_csv_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
     debug: bool = False,
+    palette_path: str | Path | None = None,
 ) -> Path:
     """Decode image with AprilTags back to CSV data.
 
@@ -24,11 +30,27 @@ def decode_image_to_csv(
         output_csv_path: Optional path for output CSV. Defaults to image name with .csv extension.
         packed_file_path: Optional path for intermediate packed file. If None, uses a temporary file.
         debug: If True, save intermediate images during processing.
+        palette_path: Optional path to color palette JSON file. Defaults to src/common/color_palette.json.
 
     Returns:
         Path to the created CSV file.
     """
     image_path = Path(image_path)
+
+    if palette_path is None:
+        palette_path = Path(__file__).parent / "src" / "common" / "color_palette.json"
+    else:
+        palette_path = Path(palette_path)
+
+    try:
+        palette_rgb = load_color_palette(palette_path)
+        usable_palette_rgb = usable_color_set(palette_rgb)
+        palette_bgr = palette_to_bgr(usable_palette_rgb)
+        print(f"Loaded palette with {len(usable_palette_rgb)} colors (from {len(palette_rgb)} total)")
+    except FileNotFoundError:
+        print(f"Warning: Palette file not found at {palette_path}, using default 4-color palette")
+        from src.common.constants import DATA_COLOR_SEQUENCE
+        palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     if not image_path.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -40,7 +62,7 @@ def decode_image_to_csv(
 
     print(f"Processing image: {image_path}")
 
-    decoded_bytes = process_image_to_data(image_path, debug=debug)
+    decoded_bytes = process_image_to_data(image_path, debug=debug, palette_bgr=palette_bgr)
 
     if decoded_bytes is None:
         raise ValueError("Failed to detect AprilTags or extract data from image")
@@ -94,6 +116,11 @@ def main() -> None:
         action="store_true",
         help="Save intermediate images during processing"
     )
+    parser.add_argument(
+        "--palette",
+        type=str,
+        help="Path to color palette JSON file (defaults to src/common/color_palette.json)",
+    )
 
     args = parser.parse_args()
 
@@ -102,7 +129,8 @@ def main() -> None:
             args.input_image,
             args.output_csv,
             args.packed_file,
-            debug=args.debug
+            debug=args.debug,
+            palette_path=args.palette,
         )
     except Exception:
         print(f"Error: {traceback.format_exc()}", file=sys.stderr)

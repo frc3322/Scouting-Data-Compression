@@ -7,6 +7,11 @@ from pathlib import Path
 import cv2
 
 from src.common.data_regions import get_data_regions
+from src.common.color_palette import (
+    load_color_palette,
+    usable_color_set,
+    palette_to_bgr,
+)
 from src.encoder.data_packer import clean_csv_newlines, encode, read_csv
 from src.encoder.image_generator import (
     calculate_minimum_image_size,
@@ -18,6 +23,7 @@ def encode_csv_to_image(
     csv_path: str | Path,
     output_image_path: str | Path | None = None,
     packed_file_path: str | Path | None = None,
+    palette_path: str | Path | None = None,
 ) -> Path:
     """Encode CSV data into an image with AprilTags.
 
@@ -25,11 +31,27 @@ def encode_csv_to_image(
         csv_path: Path to input CSV file.
         output_image_path: Optional path for output image. Defaults to CSV name with .png extension.
         packed_file_path: Optional path for intermediate packed file. Defaults to CSV name with .packed extension.
+        palette_path: Optional path to color palette JSON file. Defaults to src/common/color_palette.json.
 
     Returns:
         Path to the created image file.
     """
     csv_path = Path(csv_path)
+
+    if palette_path is None:
+        palette_path = Path(__file__).parent / "src" / "common" / "color_palette.json"
+    else:
+        palette_path = Path(palette_path)
+
+    try:
+        palette_rgb = load_color_palette(palette_path)
+        usable_palette_rgb = usable_color_set(palette_rgb)
+        palette_bgr = palette_to_bgr(usable_palette_rgb)
+        print(f"Loaded palette with {len(usable_palette_rgb)} colors (from {len(palette_rgb)} total)")
+    except FileNotFoundError:
+        print(f"Warning: Palette file not found at {palette_path}, using default 4-color palette")
+        from src.common.constants import DATA_COLOR_SEQUENCE
+        palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
@@ -57,24 +79,38 @@ def encode_csv_to_image(
     tag_data_gap = 1
     data_padding = 4
 
-    image_size = calculate_minimum_image_size(packed_data, tag_data_gap, data_padding)
+    image_size = calculate_minimum_image_size(
+        packed_data, tag_data_gap, data_padding, palette_bgr=palette_bgr
+    )
 
     print(f"Auto-detected minimum image size: {image_size}x{image_size}")
+
+    import math
+    from src.common.color_palette import calculate_bits_per_pixel
 
     data_regions = get_data_regions(image_size, image_size, tag_data_gap, data_padding)
     total_pixels = sum(
         (row_slice.stop - row_slice.start) * (col_slice.stop - col_slice.start)
         for row_slice, col_slice in data_regions
     )
-    max_bytes = (total_pixels // 8) * 2
+    bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
+    pixels_per_byte = math.ceil(8 / bits_per_pixel)
+    num_calibration_colors = len(palette_bgr)
+    max_data_pixels = total_pixels - num_calibration_colors
+    
+    if 16 % bits_per_pixel == 0:
+        pixels_per_2bytes = 16 // bits_per_pixel
+        max_bytes = (max_data_pixels // pixels_per_2bytes) * 2
+        encoding_info = f"{pixels_per_2bytes} pixels per 2 bytes"
+    else:
+        max_bytes = max_data_pixels // pixels_per_byte
+        encoding_info = f"{pixels_per_byte} pixels per byte"
 
-    print(f"Available data pixels: {total_pixels}")
+    print(f"Available data pixels: {total_pixels} (minus {num_calibration_colors} for calibration)")
     print(
-        f"Maximum data capacity: {max_bytes} bytes (2 bytes per 8 pixels using pure RGB colors)"
+        f"Maximum data capacity: {max_bytes} bytes ({bits_per_pixel} bits per pixel, {encoding_info})"
     )
-    print(
-        "Color encoding: Pure red (255,0,0), green (0,255,0), blue (0,0,255) for data"
-    )
+    print(f"Color palette: {len(palette_bgr)} colors")
     print(
         f"Utilization: {len(packed_data)}/{max_bytes} bytes ({len(packed_data) / max_bytes * 100:.1f}%)"
     )
@@ -87,6 +123,7 @@ def encode_csv_to_image(
             padding,
             tag_data_gap,
             data_padding,
+            palette_bgr=palette_bgr,
         )
     except ValueError as e:
         print(f"Error: {e}")
@@ -98,11 +135,14 @@ def encode_csv_to_image(
 
     from src.decoder.color_decoder import decode_image_data
 
+    num_calibration_colors = min(len(palette_bgr), 6)
     decoded_bytes = decode_image_data(
         encoded_image,
         len(packed_data),
         tag_data_gap=tag_data_gap,
         data_padding=data_padding,
+        palette_bgr=palette_bgr,
+        num_calibration_pixels=num_calibration_colors,
     )
     print(f"Original data size: {len(packed_data)} bytes")
     print(f"Decoded data size:  {len(decoded_bytes)} bytes")
@@ -120,16 +160,37 @@ def encode_csv_to_image(
 
 def main() -> None:
     """Main CLI entry point."""
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} INPUT.csv [OUTPUT.png] [PACKED.packed]")
-        sys.exit(1)
+    import argparse
 
-    csv_path = sys.argv[1]
-    output_image_path = sys.argv[2] if len(sys.argv) >= 3 else None
-    packed_file_path = sys.argv[3] if len(sys.argv) >= 4 else None
+    parser = argparse.ArgumentParser(
+        description="Encode CSV data into an image with AprilTags."
+    )
+    parser.add_argument("input_csv", help="Path to input CSV file")
+    parser.add_argument(
+        "output_image",
+        nargs="?",
+        help="Optional path for output image (defaults to input CSV name with .png extension)",
+    )
+    parser.add_argument(
+        "packed_file",
+        nargs="?",
+        help="Optional path for intermediate packed file (defaults to input CSV name with .packed extension)",
+    )
+    parser.add_argument(
+        "--palette",
+        type=str,
+        help="Path to color palette JSON file (defaults to src/common/color_palette.json)",
+    )
+
+    args = parser.parse_args()
 
     try:
-        encode_csv_to_image(csv_path, output_image_path, packed_file_path)
+        encode_csv_to_image(
+            args.input_csv,
+            args.output_image,
+            args.packed_file,
+            palette_path=args.palette,
+        )
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
