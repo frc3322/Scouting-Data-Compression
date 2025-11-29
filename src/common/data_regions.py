@@ -8,6 +8,9 @@ def get_data_regions(
 ) -> list[tuple[slice, slice]]:
     """Get the valid data regions where data can be placed between AprilTags.
 
+    Uses three AprilTags in top-left, top-right, and bottom-left corners.
+    Bottom-right corner is used for data, so the bottom region extends to the right edge.
+
     Args:
         image_width: Width of the image.
         image_height: Height of the image.
@@ -35,7 +38,7 @@ def get_data_regions(
             ),
             slice(
                 data_padding + tag_size + tag_data_gap,
-                image_width - data_padding - tag_size - tag_data_gap,
+                image_width - data_padding,
             ),
         ),
         (

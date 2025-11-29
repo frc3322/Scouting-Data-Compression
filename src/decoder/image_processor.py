@@ -73,7 +73,7 @@ def dewarp_image(
 
 
 def find_outer_corners_from_tags(tags: list) -> np.ndarray:
-    """Find the extreme corners from all detected April Tags.
+    """Find the extreme corners from all detected April Tags and estimate the fourth corner.
 
     Args:
         tags: List of detected April Tag objects.
@@ -90,24 +90,60 @@ def find_outer_corners_from_tags(tags: list) -> np.ndarray:
 
     all_corners = np.array(all_corners)
 
-    outer_corners = np.array(
-        [
-            all_corners[np.argmin(all_corners.sum(axis=1))],
-            all_corners[np.argmax(all_corners[:, 0] - all_corners[:, 1])],
-            all_corners[np.argmax(all_corners.sum(axis=1))],
-            all_corners[np.argmin(all_corners[:, 0] - all_corners[:, 1])],
-        ]
-    )
+    tl = all_corners[np.argmin(all_corners.sum(axis=1))]
+    tr = all_corners[np.argmax(all_corners[:, 0] - all_corners[:, 1])]
+    bl = all_corners[np.argmin(all_corners[:, 0] - all_corners[:, 1])]
+    
+    br = tr + (bl - tl)
+
+    outer_corners = np.array([tl, tr, br, bl])
 
     return outer_corners
+
+
+def reorder_corners_by_tag_ids(tags: list, corners: np.ndarray) -> np.ndarray:
+    """Reorder corners so tag 0 is TL, tag 1 is TR, tag 2 is BL.
+
+    Args:
+        tags: List of detected April Tag objects with tag_id 0, 1, or 2.
+        corners: Array of corner points [tl, tr, br, bl].
+
+    Returns:
+        Reordered corner array with correct orientation.
+    """
+    if len(tags) != 3 or len(corners) != 4:
+        return corners
+
+    tag_by_id = {tag.tag_id: tag for tag in tags}
+    if len(tag_by_id) != 3:
+        return corners
+
+    tag_centers = {tag.tag_id: np.array(tag.center) for tag in tags}
+    
+    corner_distances = {}
+    for i, corner in enumerate(corners):
+        distances = {tag_id: np.linalg.norm(corner - center) 
+                    for tag_id, center in tag_centers.items()}
+        closest_tag = min(distances.keys(), key=lambda k, d=distances: d[k])
+        corner_distances[i] = (closest_tag, distances[closest_tag])
+
+    tl_idx = min([i for i in range(4) if corner_distances[i][0] == 0], 
+                 key=lambda i: corner_distances[i][1], default=0)
+    tr_idx = min([i for i in range(4) if corner_distances[i][0] == 1], 
+                 key=lambda i: corner_distances[i][1], default=1)
+    bl_idx = min([i for i in range(4) if corner_distances[i][0] == 2], 
+                 key=lambda i: corner_distances[i][1], default=3)
+    br_idx = [i for i in range(4) if i not in [tl_idx, tr_idx, bl_idx]][0]
+
+    return np.array([corners[tl_idx], corners[tr_idx], corners[br_idx], corners[bl_idx]])
 
 
 def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tuple[np.ndarray, int] | None:
     """Detect AprilTags in an image and dewarp the detected region.
 
-    This function filters detections to only include tag_id 0 with hamming < 0.1,
-    and requires exactly 4 April tags to be detected. If debug is True, it saves
-    an annotated image showing the detected tags.
+    This function filters detections to only include tag_id 0, 1, or 2 with hamming < 0.1,
+    and requires exactly 3 April tags to be detected. The function determines orientation
+    based on tag positions and rotates the image accordingly for rotation-agnostic decoding.
 
     Args:
         image_path: Path to the input image.
@@ -117,7 +153,7 @@ def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tupl
         Tuple of (dewarped_image, grid_size) if successful, None otherwise.
 
     Raises:
-        ValueError: If not exactly 4 April tags are detected after filtering.
+        ValueError: If not exactly 3 April tags are detected after filtering.
     """
     image_path = Path(image_path)
     image = cv2.imread(str(image_path))
@@ -125,6 +161,7 @@ def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tupl
         raise FileNotFoundError(f"Could not load image: {image_path}")
 
     grey_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    grey_image = grey_image.astype(np.uint8)
 
     detector = apriltag.Detector(
         families="tag36h11",
@@ -142,16 +179,26 @@ def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tupl
         return None
 
     new_detections = []
-    for detection in detections:
-        if detection.tag_id == 0 and detection.hamming < 0.1:
-            new_detections.append(detection)
+    for detection in detections:  # type: ignore
+        try:
+            tag_id = detection.tag_id
+            hamming = detection.hamming
+            if tag_id in [0, 1, 2] and hamming < 0.1:
+                new_detections.append(detection)
+        except (AttributeError, TypeError):
+            continue
 
     detections = new_detections
 
-    # Check if exactly 4 April tags are detected after filtering
-    if len(detections) != 4:
+    if len(detections) != 3:
         raise ValueError(
-            f"Expected exactly 4 April tags after filtering, but found {len(detections)}"
+            f"Expected exactly 3 April tags (IDs 0, 1, 2) after filtering, but found {len(detections)}"
+        )
+
+    tag_ids = {tag.tag_id for tag in detections}
+    if tag_ids != {0, 1, 2}:
+        raise ValueError(
+            f"Expected tags with IDs 0, 1, and 2, but found IDs: {tag_ids}"
         )
 
     outer_corners = find_outer_corners_from_tags(detections)
@@ -159,12 +206,13 @@ def detect_and_dewarp_image(image_path: str | Path, debug: bool = False) -> tupl
     if len(outer_corners) == 0:
         return None
 
-    _, total_cells = estimate_module_size(detections, outer_corners)
+    ordered_corners = reorder_corners_by_tag_ids(detections, outer_corners)
+
+    _, total_cells = estimate_module_size(detections, ordered_corners)
     output_size = (total_cells * 50, total_cells * 50)
 
-    dewarped_color = dewarp_image(image, outer_corners, output_size=output_size)
+    dewarped_color = dewarp_image(image, ordered_corners, output_size=output_size)
 
-    # save the dewarped image
     if debug:
         cv2.imwrite("dewarped_image.png", dewarped_color)
 
@@ -307,7 +355,7 @@ def process_image_to_data(
         Decoded bytes if successful, None otherwise.
 
     Raises:
-        ValueError: If exactly 4 April tags are not detected after filtering.
+        ValueError: If exactly 3 April tags (IDs 0, 1, 2) are not detected after filtering.
     """
     if palette_bgr is None:
         from ..common.constants import DATA_COLOR_SEQUENCE
