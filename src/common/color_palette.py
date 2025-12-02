@@ -3,7 +3,6 @@
 import json
 import math
 from pathlib import Path
-from typing import Tuple
 
 
 def load_color_palette(palette_path: Path) -> list[tuple[int, int, int]]:
@@ -66,7 +65,9 @@ def usable_color_set(palette: list[tuple[int, int, int]]) -> list[tuple[int, int
     return palette[:power_of_two]
 
 
-def index_to_rgb(index: int, palette: list[tuple[int, int, int]]) -> tuple[int, int, int]:
+def index_to_rgb(
+    index: int, palette: list[tuple[int, int, int]]
+) -> tuple[int, int, int]:
     """Convert a palette index to RGB tuple.
 
     Args:
@@ -118,4 +119,3 @@ def calculate_bits_per_pixel(num_colors: int) -> int:
         Number of bits per pixel.
     """
     return int(math.log2(num_colors))
-

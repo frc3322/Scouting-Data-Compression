@@ -5,8 +5,8 @@ import numpy as np
 import pupil_apriltags as apriltag
 from pathlib import Path
 
-from ..common.data_regions import get_data_regions
-from ..common.color_palette import palette_to_bgr
+from ..common.data_regions import get_data_regions  # type: ignore
+from ..common.color_palette import palette_to_bgr  # type: ignore
 from .color_decoder import decode_image_data, map_to_palette
 
 
@@ -241,7 +241,7 @@ def extract_data_from_dewarped(
         Quantized data image array.
     """
     if palette_bgr is None:
-        from ..common.constants import DATA_COLOR_SEQUENCE
+        from ..common.constants import DATA_COLOR_SEQUENCE  # type: ignore
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     num_calibration_colors = len(palette_bgr)
@@ -358,7 +358,7 @@ def process_image_to_data(
         ValueError: If exactly 3 April tags (IDs 0, 1, 2) are not detected after filtering.
     """
     if palette_bgr is None:
-        from ..common.constants import DATA_COLOR_SEQUENCE
+        from ..common.constants import DATA_COLOR_SEQUENCE  # type: ignore
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     result = detect_and_dewarp_image(image_path, debug=debug)

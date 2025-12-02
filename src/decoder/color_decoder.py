@@ -1,8 +1,8 @@
 """Color decoding utilities for extracting RGB values from images."""
 
 import numpy as np
-from ..common.data_regions import get_data_regions
-from ..common.color_palette import calculate_bits_per_pixel
+from ..common.data_regions import get_data_regions  # type: ignore
+from ..common.color_palette import calculate_bits_per_pixel  # type: ignore
 
 
 def assign_palette_indices(
@@ -169,8 +169,8 @@ def decode_image_data(
         Decoded bytes.
     """
     if palette_bgr is None:
-        from ..common.constants import DATA_COLOR_SEQUENCE
-        from ..common.color_palette import palette_to_bgr
+        from ..common.constants import DATA_COLOR_SEQUENCE  # type: ignore
+        from ..common.color_palette import palette_to_bgr  # type: ignore
 
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 

@@ -1,8 +1,8 @@
 """Image generation utilities for creating encoded images."""
 
 import numpy as np
-from ..common.apriltag_generation import generate_april_tags_image
-from ..common.data_regions import get_data_regions
+from ..common.apriltag_generation import generate_april_tags_image  # type: ignore
+from ..common.data_regions import get_data_regions  # type: ignore
 from .color_encoder import encode_bytes_to_rgb, calculate_bits_per_pixel
 
 
@@ -30,8 +30,9 @@ def create_encoded_image(
         Numpy array representing the encoded image.
     """
     if palette_bgr is None:
-        from ..common.constants import DATA_COLOR_SEQUENCE
-        from ..common.color_palette import palette_to_bgr
+        from ..common.constants import DATA_COLOR_SEQUENCE  # type: ignore
+        from ..common.color_palette import palette_to_bgr  # type: ignore
+
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     image = generate_april_tags_image(image_width, image_height, padding)
@@ -49,11 +50,11 @@ def create_encoded_image(
                 pixel_coords.append((row, col))
 
     import math
-    
+
     bytes_needed = len(data_bytes)
     bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
     pixels_per_byte = math.ceil(8 / bits_per_pixel)
-    
+
     if 16 % bits_per_pixel == 0:
         pixels_per_2bytes = 16 // bits_per_pixel
         pixels_needed = ((bytes_needed + 1) // 2) * pixels_per_2bytes
@@ -107,19 +108,22 @@ def calculate_minimum_image_size(
         Minimum square image size that can accommodate the data.
     """
     if palette_bgr is None:
-        from ..common.constants import DATA_COLOR_SEQUENCE
-        from ..common.color_palette import palette_to_bgr
+        from ..common.constants import DATA_COLOR_SEQUENCE  # type: ignore
+        from ..common.color_palette import palette_to_bgr  # type: ignore
+
         palette_bgr = palette_to_bgr(list(DATA_COLOR_SEQUENCE))
 
     import math
-    
+
     bits_per_pixel = calculate_bits_per_pixel(len(palette_bgr))
     pixels_per_byte = math.ceil(8 / bits_per_pixel)
     num_calibration_colors = len(palette_bgr)
-    
+
     if 16 % bits_per_pixel == 0:
         pixels_per_2bytes = 16 // bits_per_pixel
-        pixels_needed = ((len(data_bytes) + 1) // 2) * pixels_per_2bytes + num_calibration_colors
+        pixels_needed = (
+            (len(data_bytes) + 1) // 2
+        ) * pixels_per_2bytes + num_calibration_colors
     else:
         pixels_needed = len(data_bytes) * pixels_per_byte + num_calibration_colors
 
@@ -143,4 +147,3 @@ def calculate_minimum_image_size(
             raise ValueError(
                 f"Cannot find suitable image size for {len(data_bytes)} bytes of data"
             )
-

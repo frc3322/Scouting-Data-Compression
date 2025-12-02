@@ -1,6 +1,6 @@
 """Color encoding utilities for converting bytes to RGB values."""
 
-from ..common.color_palette import calculate_bits_per_pixel
+from ..common.color_palette import calculate_bits_per_pixel  # type: ignore
 
 
 def encode_byte_to_rgb(
@@ -16,7 +16,7 @@ def encode_byte_to_rgb(
         List of BGR tuples. Number depends on bits per pixel.
     """
     import math
-    
+
     num_colors = len(palette_bgr)
     bits_per_pixel = calculate_bits_per_pixel(num_colors)
     pixels_per_byte = math.ceil(8 / bits_per_pixel)
@@ -48,7 +48,7 @@ def encode_2bytes_to_rgb(
     """
     num_colors = len(palette_bgr)
     bits_per_pixel = calculate_bits_per_pixel(num_colors)
-    
+
     if 16 % bits_per_pixel == 0:
         combined_bits = 16
         pixels_per_2bytes = combined_bits // bits_per_pixel
@@ -80,7 +80,7 @@ def encode_bytes_to_rgb(
     """
     num_colors = len(palette_bgr)
     bits_per_pixel = calculate_bits_per_pixel(num_colors)
-    
+
     rgb_list = []
     if 8 % bits_per_pixel == 0:
         for i in range(0, len(data_bytes), 2):
@@ -91,4 +91,3 @@ def encode_bytes_to_rgb(
         for byte_val in data_bytes:
             rgb_list.extend(encode_byte_to_rgb(byte_val, palette_bgr))
     return rgb_list
-

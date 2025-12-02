@@ -6,13 +6,14 @@ import zstandard
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from ..common.schema import ColumnSchema, SCHEMA as DEFAULT_SCHEMA
+from ..common.schema import ColumnSchema, SCHEMA as DEFAULT_SCHEMA  # type: ignore
 
 
 class BitReader:
     """Legacy row-major bit reader. No longer used; kept for reference.
     Current implementation uses columnar bit-plane unpacking instead.
     """
+
     def __init__(self, data: bytes) -> None:
         self._data = data
         self._index = 0
@@ -53,13 +54,13 @@ def unpack_columnar_bitplanes(
     data: bytes, bits: int, num_rows: int, offset: int
 ) -> Tuple[List[int], int]:
     """Inverse of pack_columnar_bitplanes for a single column.
-    
+
     Args:
         data: Packed byte data.
         bits: Number of bits per value in this column.
         num_rows: Total number of rows.
         offset: Current byte offset in data.
-    
+
     Returns:
         Tuple of (unpacked values list, new offset).
     """
@@ -107,7 +108,7 @@ def decode(
     compressed_data = data[12:]
 
     decompressor = zstandard.ZstdDecompressor()
-    data_bytes = decompressor.decompress(compressed_data, max_output_size=1024*1024)
+    data_bytes = decompressor.decompress(compressed_data, max_output_size=1024 * 1024)
 
     bytes_per_plane = (num_rows + 7) // 8
     expected = sum(s.bits for s in schema_to_use if s.bits > 0) * bytes_per_plane
@@ -121,9 +122,7 @@ def decode(
     for col_idx, s in enumerate(schema_to_use):
         if s.bits == 0:
             continue
-        vals, offset = unpack_columnar_bitplanes(
-            data_bytes, s.bits, num_rows, offset
-        )
+        vals, offset = unpack_columnar_bitplanes(data_bytes, s.bits, num_rows, offset)
         col_values[col_idx] = vals
 
     rows: List[List[str]] = []
@@ -144,9 +143,7 @@ def decode(
             else:
                 assert s.values is not None
                 if value >= len(s.values):
-                    raise ValueError(
-                        f"Enum index {value} out of range for {s.name}"
-                    )
+                    raise ValueError(f"Enum index {value} out of range for {s.name}")
                 row.append(s.values[value])
         rows.append(row)
 
@@ -166,4 +163,3 @@ def write_csv(headers: List[str], rows: List[List[str]], out_path: Path) -> None
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(rows)
-

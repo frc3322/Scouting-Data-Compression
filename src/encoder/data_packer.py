@@ -6,13 +6,14 @@ import zstandard
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ..common.schema import ColumnSchema, SCHEMA, SchemaLoader
+from ..common.schema import ColumnSchema, SCHEMA, SchemaLoader  # type: ignore
 
 
 class BitWriter:
     """Legacy row-major bit writer. No longer used; kept for reference.
     Current implementation uses columnar bit-plane packing instead.
     """
+
     def __init__(self) -> None:
         self._buffer: int = 0
         self._bit_count: int = 0
@@ -51,12 +52,12 @@ def pack_columnar_bitplanes(
     bits_by_col: List[int],
 ) -> bytes:
     """Pack columns as bit-planes (MSB->LSB) for better compressibility.
-    
+
     Args:
         values_by_col: List of columns, each containing integer values for all rows.
         bits_by_col: Number of bits for each column.
         num_rows: Total number of rows.
-    
+
     Returns:
         Packed bytes with columnar bit-plane layout.
     """
@@ -138,15 +139,11 @@ def encode(
 
     schema_names = [s.name for s in schema_to_use]
 
-    header_to_csv_idx: Dict[str, int] = {
-        name: idx for idx, name in enumerate(headers)
-    }
+    header_to_csv_idx: Dict[str, int] = {name: idx for idx, name in enumerate(headers)}
 
     missing_columns = [name for name in schema_names if name not in header_to_csv_idx]
     if missing_columns:
-        raise ValueError(
-            f"CSV missing required columns from schema: {missing_columns}"
-        )
+        raise ValueError(f"CSV missing required columns from schema: {missing_columns}")
 
     num_rows = len(rows)
 
@@ -178,8 +175,7 @@ def encode(
                 assert s.int_max is not None
                 if value > s.int_max:
                     raise ValueError(
-                        f"Value {value} exceeds int_max {s.int_max} for "
-                        f"column {s.name}"
+                        f"Value {value} exceeds int_max {s.int_max} for column {s.name}"
                     )
             else:
                 lookup = enum_lookups[col_idx]
@@ -217,4 +213,3 @@ def encode(
     print(f"Original CSV size (approx):    {original_size} bytes")
     print(f"Final compressed size:         {final_size} bytes")
     print(f"Compression ratio:             {ratio:.2f}x")
-
