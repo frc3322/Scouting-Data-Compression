@@ -5,8 +5,11 @@
 
 A specialized Python system for encoding FRC (FIRST Robotics Competition) scouting data into visual images using heavy data compression and Apriltags for data tag finding, enabling efficient data compression and transfer through camera capture. Designed specifically for scouting applications where structured match data needs to be quickly captured and transferred in environments with very limited connectivity.
 
+See [https://github.com/frc3322/Scouting-Data-Compression-Web](https://github.com/frc3322/Scouting-Data-Compression-Web) for frontend data tag generation.
+
 39 matches encoded to a data-code!
-<img width="1397" height="1413" alt="image" src="https://github.com/user-attachments/assets/a1df171f-46c0-4c20-a27a-5fd840eebe59" />
+
+<img width="320" height="320" alt="MatchData_resized_8x" src="https://github.com/user-attachments/assets/c5275f58-f02d-49fd-9456-a8285b1e5b19" />
 
 ## 🚀 Features
 
