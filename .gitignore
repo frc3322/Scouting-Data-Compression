@@ -14,3 +14,4 @@ __pycache__/
 *.cpython-312.pyc
 
 test_*
+/testing

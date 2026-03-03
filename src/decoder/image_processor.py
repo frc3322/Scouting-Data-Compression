@@ -260,37 +260,50 @@ def extract_data_from_dewarped(
             "No data regions could be determined from the decoded grid size."
         )
 
-    # This retrieves the color of the last N pixels which are the calibration colors from the palette.
+    # Sample the last N cells in encoder order (same iteration as get_data_regions).
     # This accounts for varying lighting conditions.
-    last_data_region = data_regions[-1]
+    pixel_coords = [
+        (row, col)
+        for row_slice, col_slice in data_regions
+        for row in range(row_slice.start, row_slice.stop)
+        for col in range(col_slice.start, col_slice.stop)
+    ]
+    calibration_coords = pixel_coords[-num_calibration_colors:] if len(pixel_coords) >= num_calibration_colors else []
     calibration_cells_average = []
-    for row in range(last_data_region[0].stop - 1, last_data_region[0].stop):
-        for col in range(
-            last_data_region[1].stop - num_calibration_colors,
-            last_data_region[1].stop,
-        ):
-            y_start = row * cell_size
-            y_end = min((row + 1) * cell_size, dewarped_image.shape[0])
-            x_start = col * cell_size
-            x_end = min((col + 1) * cell_size, dewarped_image.shape[1])
+    for row, col in calibration_coords:
+        y_start = row * cell_size
+        y_end = min((row + 1) * cell_size, dewarped_image.shape[0])
+        x_start = col * cell_size
+        x_end = min((col + 1) * cell_size, dewarped_image.shape[1])
+        if y_start >= y_end or x_start >= x_end:
+            continue
 
-            cell = dewarped_image[y_start:y_end, x_start:x_end]
+        cell = dewarped_image[y_start:y_end, x_start:x_end]
+        inner_h = cell.shape[0] * 3 // 4 - cell.shape[0] // 4
+        inner_w = cell.shape[1] * 3 // 4 - cell.shape[1] // 4
+        if inner_h <= 0 or inner_w <= 0:
+            continue
 
-            cell = cell[
-                cell.shape[0] // 4 : cell.shape[0] * 3 // 4,
-                cell.shape[1] // 4 : cell.shape[1] * 3 // 4,
-            ]
+        cell = cell[
+            cell.shape[0] // 4 : cell.shape[0] * 3 // 4,
+            cell.shape[1] // 4 : cell.shape[1] * 3 // 4,
+        ]
+        mean_val = np.mean(cell, axis=(0, 1))
+        if not np.any(np.isnan(mean_val)):
+            calibration_cells_average.append(mean_val)
 
-            calibration_cells_average.append(np.mean(cell, axis=(0, 1)))
-
-    # Build corrected palette from calibration cells
-    # Use calibration cells to map to palette colors, wrapping if needed
+    # Build corrected palette from calibration cells; fall back to original palette on NaN
     corrected_palette_bgr = []
     for i in range(len(palette_bgr)):
-        calibration_idx = i % len(calibration_cells_average)
-        corrected_palette_bgr.append(
-            tuple(int(c) for c in calibration_cells_average[calibration_idx])
-        )
+        calibration_idx = i % len(calibration_cells_average) if calibration_cells_average else -1
+        if calibration_idx >= 0:
+            vals = calibration_cells_average[calibration_idx]
+            if np.any(np.isnan(vals)):
+                corrected_palette_bgr.append(palette_bgr[i])
+            else:
+                corrected_palette_bgr.append(tuple(int(c) for c in vals))
+        else:
+            corrected_palette_bgr.append(palette_bgr[i])
 
     decoded_data_image = np.zeros((grid_size, grid_size, 3), dtype=np.uint8)
     annotated_image = dewarped_image.copy()

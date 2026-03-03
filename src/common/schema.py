@@ -3,9 +3,10 @@
 import json
 import math
 import importlib.util
+import warnings as _warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Literal, cast
+from typing import List, Optional, Dict, Any, Literal, cast, Tuple
 
 ColumnKind = Literal["int", "enum"]
 
@@ -180,6 +181,54 @@ class SchemaLoader:
         return SCHEMA
 
     @staticmethod
+    def _resolve_column_fields(
+        name: str,
+        kind: str,
+        bits: Optional[int],
+        int_max: Optional[int],
+        values: Optional[List[str]],
+    ) -> Tuple[int, Optional[int], Optional[List[str]]]:
+        """Derive missing bits/int_max/values fields and warn on conflicts."""
+        if kind == "int":
+            if bits is None and int_max is None:
+                raise ValueError(
+                    f"int column '{name}': must provide 'bits' or 'int_max'"
+                )
+            if bits is not None and int_max is not None:
+                bits_needed = 0 if int_max == 0 else math.ceil(math.log2(int_max + 1))
+                effective_bits = min(bits, bits_needed)
+                effective_int_max = min(
+                    int_max, (1 << effective_bits) - 1 if effective_bits > 0 else 0
+                )
+                _warnings.warn(
+                    f"Column '{name}': both 'bits' and 'int_max' provided; "
+                    f"using bits={effective_bits}, int_max={effective_int_max}",
+                    stacklevel=4,
+                )
+                bits, int_max = effective_bits, effective_int_max
+            elif bits is not None:
+                int_max = (1 << bits) - 1 if bits > 0 else 0
+            else:
+                bits = 0 if int_max == 0 else math.ceil(math.log2(int_max + 1))
+        else:  # enum
+            if values is None:
+                raise ValueError(f"enum column '{name}': 'values' is required")
+            count = len(values)
+            bits_needed = 0 if count <= 1 else math.ceil(math.log2(count))
+            if bits is not None:
+                effective_bits = min(bits, bits_needed)
+                if bits != effective_bits:
+                    _warnings.warn(
+                        f"Column '{name}': 'bits' provided with 'values'; "
+                        f"using bits={effective_bits}",
+                        stacklevel=4,
+                    )
+                bits = effective_bits
+            else:
+                bits = bits_needed
+        return bits, int_max, values
+
+    @staticmethod
     def validate_schema(schema: List[ColumnSchema]) -> None:
         """Validate schema structure and constraints.
 
@@ -202,9 +251,7 @@ class SchemaLoader:
             seen_names.add(s.name)
 
             if s.kind == "int":
-                if s.int_max is None:
-                    raise ValueError(f"int column {s.name} missing int_max")
-                if s.bits > 0:
+                if s.bits > 0 and s.int_max is not None:
                     max_representable = (1 << s.bits) - 1
                     if s.int_max > max_representable:
                         raise ValueError(
@@ -241,18 +288,14 @@ class SchemaLoader:
             raise KeyError("Missing required field: name")
         if "kind" not in data:
             raise KeyError("Missing required field: kind")
-        if "bits" not in data:
-            raise KeyError("Missing required field: bits")
 
         name = str(data["name"])
         kind_str = str(data["kind"])
         if kind_str not in ("int", "enum"):
             raise ValueError(f"Invalid kind: {kind_str}. Must be 'int' or 'enum'")
         kind = cast(ColumnKind, kind_str)
-        bits = int(data["bits"])
 
-        if kind not in ("int", "enum"):
-            raise ValueError(f"Invalid kind: {kind}. Must be 'int' or 'enum'")
+        bits: Optional[int] = int(data["bits"]) if "bits" in data else None
 
         int_max = None
         if "int_max" in data and data["int_max"] is not None:
@@ -262,12 +305,16 @@ class SchemaLoader:
         if "values" in data and data["values"] is not None:
             values = [str(v) for v in data["values"]]
 
+        resolved_bits, resolved_int_max, resolved_values = (
+            SchemaLoader._resolve_column_fields(name, kind, bits, int_max, values)
+        )
+
         return ColumnSchema(
             name=name,
             kind=kind,
-            bits=bits,
-            int_max=int_max,
-            values=values,
+            bits=resolved_bits,
+            int_max=resolved_int_max,
+            values=resolved_values,
         )
 
     @staticmethod
